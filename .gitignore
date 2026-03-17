@@ -30,6 +30,12 @@ dist-ssr
 .env.test.local
 .env.production.local
 
+# Cloudflare Tunnel credentials
+.cloudflared/
+*.pem
+cert.pem
+config.yml
+
 # Database files
 data/
 *.json

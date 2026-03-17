@@ -47,11 +47,28 @@ Edit `.env` and add your credentials:
 ```env
 VITE_N8N_WEBHOOK_URL=your_n8n_webhook_url
 VITE_PIPEDRIVE_API_KEY=your_pipedrive_api_key
-NGROK_AUTHTOKEN=your_ngrok_token (optional)
+CLOUDFLARE_TUNNEL_NAME=sales-outreach-n8n
+CLOUDFLARE_TUNNEL_URL=https://your-tunnel-url.com
 PORT=3001
 ```
 
-4. Start the application:
+4. Set up Cloudflare Tunnel (one-time setup):
+```bash
+# Install cloudflared
+brew install cloudflare/cloudflare/cloudflared  # macOS
+# For other OS: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/
+
+# Authenticate with Cloudflare
+cloudflared tunnel login
+
+# Create your tunnel
+cloudflared tunnel create sales-outreach-n8n
+
+# Create a DNS route (or use Cloudflare's free subdomain)
+cloudflared tunnel route dns sales-outreach-n8n api.yourdomain.com
+```
+
+5. Start the application:
 ```bash
 npm start
 ```
@@ -59,7 +76,7 @@ npm start
 This will start:
 - Frontend: http://localhost:3000
 - API Server: http://localhost:3001
-- Ngrok tunnel (if configured)
+- Cloudflare Tunnel (permanent URL)
 
 ## API Endpoints
 
@@ -118,13 +135,20 @@ Body: {
 }
 ```
 
-### Using with Ngrok
+### Using with Cloudflare Tunnel
 
 For external access (e.g., cloud-based n8n):
 
-1. Add your ngrok authtoken to `.env`
-2. Run `npm start`
-3. Use the ngrok URL shown in console for n8n webhooks
+1. Complete the one-time Cloudflare Tunnel setup (see Quick Start)
+2. Add your tunnel configuration to `.env`
+3. Run `npm start`
+4. Use your **permanent** tunnel URL in n8n webhooks - it never changes!
+
+**Key Benefits:**
+- ✅ URL stays the same forever (no need to update n8n after restarts)
+- ✅ Free tier available
+- ✅ Better performance with Cloudflare's global network
+- ✅ Built-in DDoS protection
 
 ## Project Structure
 
@@ -142,7 +166,7 @@ n8n-workflow-manager/
 ├── data/
 │   └── organizations.json           # Database file (auto-created)
 ├── server.js                        # Express API server
-├── start-ngrok.js                   # Ngrok startup script
+├── start-cloudflare.js              # Cloudflare Tunnel startup script
 └── package.json
 ```
 
@@ -169,10 +193,10 @@ Organizations are stored with the following fields:
 
 ## Scripts
 
-- `npm start` - Start frontend, API server, and ngrok
+- `npm start` - Start frontend, API server, and Cloudflare Tunnel
 - `npm run dev` - Start frontend only
 - `npm run server` - Start API server only
-- `npm run ngrok` - Start ngrok tunnel only
+- `npm run tunnel` - Start Cloudflare Tunnel only
 - `npm run build` - Build for production
 
 ## Documentation
@@ -214,9 +238,16 @@ Invoke-RestMethod -Uri "http://localhost:3001/api/organizations" -Method Post -B
 - Change PORT in `.env` file
 - Update `src/utils/apiClient.js` with new port
 
-### Ngrok URL changes on restart
-- Use Cloudflare Tunnel for permanent URL
-- Or upgrade to ngrok paid plan for static domain
+### Cloudflare Tunnel not starting
+- Ensure cloudflared is installed: `cloudflared --version`
+- Verify tunnel exists: `cloudflared tunnel list`
+- Check tunnel name in `.env` matches created tunnel
+- Re-authenticate if needed: `cloudflared tunnel login`
+
+### Tunnel URL not accessible
+- Verify DNS route is configured: `cloudflared tunnel route dns list`
+- Check Cloudflare dashboard for tunnel status
+- Ensure server is running on correct port (default: 3001)
 
 ## Contributing
 
