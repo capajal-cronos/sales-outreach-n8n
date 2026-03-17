@@ -99,7 +99,7 @@ function App() {
       </main>
 
       <footer className="app-footer">
-        <p>💡 Tip: Configure n8n webhooks to automate workflow triggers</p>
+        
       </footer>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './PeopleFinder.css';
 
 function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) {
@@ -12,6 +12,32 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
 
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState(workflowData.people || []);
+  const [pipedrivePersons, setPipedrivePersons] = useState([]);
+
+  // Get Pipedrive API key from environment
+  const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
+
+  // Fetch people from Pipedrive on mount
+  useEffect(() => {
+    fetchPipedrivePersons();
+  }, []);
+
+  const fetchPipedrivePersons = async () => {
+    try {
+      const response = await fetch(
+        `https://api.pipedrive.com/v1/persons?api_token=${PIPEDRIVE_API_KEY}&limit=100`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          setPipedrivePersons(data.data);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch Pipedrive persons:', err);
+    }
+  };
 
   const seniorities = [
     'Entry',
@@ -64,7 +90,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
   };
 
   const handleSearch = async () => {
-    if (searchParams.selectedOrganizations.length === 0) {
+    if (workflowData.organizations.length > 0 && searchParams.selectedOrganizations.length === 0) {
       alert('Please select at least one organization');
       return;
     }
@@ -139,17 +165,39 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
     <div className="people-finder">
       <div className="section-header">
         <h2>👥 Find People</h2>
-        <p>Search for contacts within selected organizations</p>
+        <p>Search for contacts within selected organizations or view existing people from Pipedrive</p>
       </div>
 
-      {workflowData.organizations.length === 0 ? (
-        <div className="empty-state">
-          <p>⚠️ No organizations found. Please go back and search for organizations first.</p>
-          <button className="btn btn-secondary" onClick={onPrevious}>
-            ← Back to Organization Search
-          </button>
+      {/* Pipedrive People */}
+      {pipedrivePersons.length > 0 && (
+        <div className="pipedrive-people">
+          <h3>📋 People in Pipedrive ({pipedrivePersons.length})</h3>
+          <div className="pipedrive-table-container">
+            <table className="pipedrive-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Organization</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pipedrivePersons.map(person => (
+                  <tr key={person.id}>
+                    <td><strong>{person.name}</strong></td>
+                    <td>{person.email && person.email[0] ? person.email[0].value : '-'}</td>
+                    <td>{person.phone && person.phone[0] ? person.phone[0].value : '-'}</td>
+                    <td>{person.org_id?.name || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      ) : (
+      )}
+
+      {workflowData.organizations.length > 0 ? (
         <>
           <div className="search-form">
             <div className="form-section">
@@ -307,6 +355,13 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
             <p>The webhook should accept organization IDs and search criteria, then return contact results.</p>
           </div>
         </>
+      ) : (
+        <div className="info-message">
+          <p>💡 You can search for people once you have organizations, or view existing people from Pipedrive above.</p>
+          <button className="btn btn-secondary" onClick={onPrevious}>
+            ← Go to Organization Search
+          </button>
+        </div>
       )}
     </div>
   );

@@ -18,7 +18,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     organizationLocations: [],
     organizationIndustryTagIds: [],
     personTitles: [],
-    revenueRange: '',
+    revenueRange: [],
     perPage: 5
   });
 
@@ -34,6 +34,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
 
   // Get configuration from environment variables
   const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL;
+  const N8N_FILTERS_WEBHOOK_URL = import.meta.env.VITE_N8N_FILTERS_WEBHOOK_URL || 'https://aigeneers.app.n8n.cloud/webhook-test/organization-filters';
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 
   // Initialize database and load organizations on mount
@@ -179,9 +180,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
           fileType: ""
         };
       } else if (searchMode === 'filters') {
-        // Filter-based search mode
+        // Filter-based search mode - Format for Apollo.io API
         const hasFilters = searchParams.organizationNumEmployeesRanges.length > 0 ||
-                          searchParams.revenueRange ||
+                          searchParams.revenueRange.length > 0 ||
                           searchParams.organizationIndustryTagIds.length > 0 ||
                           searchParams.organizationLocations.length > 0;
         
@@ -191,25 +192,30 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
           return;
         }
         
+        // Format request body to match Apollo.io API exactly
+        // All array values must be strings for proper n8n handling
         requestBody = {
-          mode: 'filters',
-          q_organization_name: "",
-          organization_domain: "",
-          organization_locations: searchParams.organizationLocations.map(loc => `"${loc}"`).join(', '),
-          organizationNumEmployeesRanges: searchParams.organizationNumEmployeesRanges || [],
-          organizationIndustryTagIds: searchParams.organizationIndustryTagIds || [],
-          revenueRange: searchParams.revenueRange || "",
+          organization_num_employees_ranges: searchParams.organizationNumEmployeesRanges || [],
+          organization_locations: searchParams.organizationLocations || [],
+          q_organization_keyword_tags: searchParams.organizationIndustryTagIds || [],
           page: 1,
-          per_page: searchParams.perPage,
-          fileData: "",
-          fileName: "",
-          fileType: ""
+          per_page: searchParams.perPage || 10
         };
+
+        // Add revenue range if selected (use first selected range)
+        if (searchParams.revenueRange && searchParams.revenueRange.length > 0) {
+          const [min, max] = searchParams.revenueRange[0].split(',');
+          requestBody['revenue_range[min]'] = convertRevenueToNumber(min);
+          requestBody['revenue_range[max]'] = convertRevenueToNumber(max);
+        }
       }
 
-      console.log('Sending to webhook:', requestBody);
+      // Use different webhook URL for filter-based search
+      const webhookUrl = searchMode === 'filters' ? N8N_FILTERS_WEBHOOK_URL : N8N_WEBHOOK_URL;
       
-      const response = await fetch(N8N_WEBHOOK_URL, {
+      console.log('Sending to webhook:', webhookUrl, requestBody);
+      
+      const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -253,6 +259,17 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Helper function to convert revenue strings to numbers for Apollo API
+  const convertRevenueToNumber = (value) => {
+    if (!value) return null;
+    if (value === 'max') return null; // No upper limit
+    
+    const numValue = parseFloat(value);
+    if (value.includes('B')) return numValue * 1000000000;
+    if (value.includes('M')) return numValue * 1000000;
+    return numValue;
   };
 
   const readFileContent = (file) => {
@@ -314,53 +331,33 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         <p>Choose your search method: manual entry, file upload, or filter-based search</p>
       </div>
 
-      {/* Database Statistics */}
-      {dbStats.total > 0 && (
-        <div className="db-stats">
-          <h3>📊 Database Statistics</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <span className="stat-value">{dbStats.total}</span>
-              <span className="stat-label">Total</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-value">{dbStats.unprocessed}</span>
-              <span className="stat-label">Unprocessed</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-value">{dbStats.processed}</span>
-              <span className="stat-label">Processed</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-value">{dbStats.errors}</span>
-              <span className="stat-label">Errors</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Pipedrive Organizations */}
       {pipedriveOrganizations.length > 0 && (
         <div className="pipedrive-orgs">
           <h3>📋 Organizations in Pipedrive ({pipedriveOrganizations.length})</h3>
-          <div className="results-grid">
-            {pipedriveOrganizations.slice(0, 6).map(org => (
-              <div key={org.id} className="organization-card pipedrive-card">
-                <div className="card-header">
-                  <h4>{org.name}</h4>
-                  <span className="badge">Pipedrive</span>
-                </div>
-                <div className="card-body">
-                  {org.address && <p><strong>📍 Address:</strong> {org.address}</p>}
-                  {org.owner_id && <p><strong>👤 Owner ID:</strong> {org.owner_id.name}</p>}
-                  {org.people_count !== undefined && <p><strong>👥 People:</strong> {org.people_count}</p>}
-                </div>
-              </div>
-            ))}
+          <div className="pipedrive-table-container">
+            <table className="pipedrive-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Address</th>
+                  <th>Owner</th>
+                  <th>People</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pipedriveOrganizations.map(org => (
+                  <tr key={org.id}>
+                    <td><strong>{org.name}</strong></td>
+                    <td>{org.address || '-'}</td>
+                    <td>{org.owner_id?.name || '-'}</td>
+                    <td>{org.people_count !== undefined ? org.people_count : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          {pipedriveOrganizations.length > 6 && (
-            <p className="show-more">+ {pipedriveOrganizations.length - 6} more organizations in Pipedrive</p>
-          )}
         </div>
       )}
 
@@ -434,11 +431,10 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
           </>
         ) : searchMode === 'manual' ? (
           <>
-            {/* Manual Search - Name/Domain with optional Location */}
-            <div className="form-section">
+            {/* Manual Search - Name/Domain with optional Location - Compact Layout */}
+            <div className="form-section compact">
               <h3>Organization Details</h3>
-              <p className="section-description">Provide organization name and/or domain. Location is optional.</p>
-              <div className="form-row">
+              <div className="form-grid-compact">
                 <div className="form-group">
                   <label>Organization Name</label>
                   <input
@@ -456,14 +452,36 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
                     value={searchParams.organizationDomain}
                     onChange={(e) => handleInputChange('organizationDomain', e.target.value)}
                   />
-                  <small>If domain is provided, only 1 result will be returned</small>
+                </div>
+                <div className="form-group">
+                  <label>Results Per Page</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    placeholder="10"
+                    value={searchParams.perPage || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '') {
+                        handleInputChange('perPage', '');
+                      } else {
+                        const num = parseInt(value);
+                        if (!isNaN(num) && num >= 1 && num <= 50) {
+                          handleInputChange('perPage', num);
+                        }
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value === '' || parseInt(e.target.value) < 1) {
+                        handleInputChange('perPage', 10);
+                      }
+                    }}
+                  />
                 </div>
               </div>
-            </div>
-
-            <div className="form-section">
-              <h3>Location (Optional)</h3>
               <div className="form-group">
+                <label>Location (Optional)</label>
                 <div className="location-tags">
                   {searchParams.organizationLocations.map((loc, idx) => (
                     <span key={idx} className="location-tag">
@@ -494,66 +512,83 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
                     }
                   }}
                 />
-                <small>Press Enter to add each location</small>
-              </div>
-            </div>
-
-            <div className="form-section">
-              <h3>Results Per Page</h3>
-              <div className="form-group">
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  placeholder="10"
-                  value={searchParams.perPage}
-                  onChange={(e) => handleInputChange('perPage', parseInt(e.target.value) || 10)}
-                />
-                <small>Number of organizations to return (ignored if domain is provided)</small>
               </div>
             </div>
           </>
         ) : (
           <>
-            {/* Filter-based Search */}
-            <div className="form-section">
+            {/* Filter-based Search - Compact Layout */}
+            <div className="form-section compact">
               <h3>Search by Company Characteristics</h3>
-              <p className="section-description">Select filters to find organizations matching your criteria</p>
-            </div>
+              
+              <div className="filters-grid">
+                {/* Company Size */}
+                <div className="filter-group">
+                  <label className="filter-label">Company Size</label>
+                  <div className="checkbox-grid">
+                    {employeeRanges.map(range => (
+                      <label key={range.value} className="checkbox-label compact">
+                        <input
+                          type="checkbox"
+                          checked={searchParams.organizationNumEmployeesRanges.includes(range.value)}
+                          onChange={() => handleMultiSelectChange('organizationNumEmployeesRanges', range.value)}
+                        />
+                        <span>{range.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
 
-            <div className="form-section">
-              <h3>Company Size</h3>
-              <div className="checkbox-group">
-                {employeeRanges.map(range => (
-                  <label key={range.value} className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={searchParams.organizationNumEmployeesRanges.includes(range.value)}
-                      onChange={() => handleMultiSelectChange('organizationNumEmployeesRanges', range.value)}
-                    />
-                    {range.label}
-                  </label>
-                ))}
+                {/* Revenue Range */}
+                <div className="filter-group">
+                  <label className="filter-label">Revenue Range</label>
+                  <div className="checkbox-grid">
+                    {revenueRanges.map(range => (
+                      <label key={range.value} className="checkbox-label compact">
+                        <input
+                          type="checkbox"
+                          checked={searchParams.revenueRange.includes(range.value)}
+                          onChange={() => handleMultiSelectChange('revenueRange', range.value)}
+                        />
+                        <span>{range.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div className="form-section">
-              <h3>Revenue Range</h3>
-              <select
-                value={searchParams.revenueRange}
-                onChange={(e) => handleInputChange('revenueRange', e.target.value)}
-                className="select-input"
-              >
-                <option value="">Select revenue range</option>
-                {revenueRanges.map(range => (
-                  <option key={range.value} value={range.value}>{range.label}</option>
-                ))}
-              </select>
-            </div>
+              {/* Results Per Page */}
+              <div className="form-group" style={{ marginTop: '1rem', maxWidth: '200px' }}>
+                <label className="filter-label">Results Per Page</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  placeholder="10"
+                  className="input-compact"
+                  value={searchParams.perPage || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '') {
+                      handleInputChange('perPage', '');
+                    } else {
+                      const num = parseInt(value);
+                      if (!isNaN(num) && num >= 1 && num <= 50) {
+                        handleInputChange('perPage', num);
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    if (e.target.value === '' || parseInt(e.target.value) < 1) {
+                      handleInputChange('perPage', 10);
+                    }
+                  }}
+                />
+              </div>
 
-            <div className="form-section">
-              <h3>Location</h3>
-              <div className="form-group">
+              {/* Location */}
+              <div className="form-group" style={{ marginTop: '1rem' }}>
+                <label className="filter-label">Location</label>
                 <div className="location-tags">
                   {searchParams.organizationLocations.map((loc, idx) => (
                     <span key={idx} className="location-tag">
@@ -584,35 +619,17 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
                     }
                   }}
                 />
-                <small>Press Enter to add each location</small>
               </div>
-            </div>
 
-            <div className="form-section">
-              <h3>Industry Tags</h3>
-              <div className="form-group">
+              {/* Industry Tags */}
+              <div className="form-group" style={{ marginTop: '1rem' }}>
+                <label className="filter-label">Industry Tags</label>
                 <input
                   type="text"
-                  placeholder="e.g., Technology, SaaS, E-commerce"
+                  placeholder="e.g., Technology, SaaS, E-commerce (comma-separated)"
                   value={searchParams.organizationIndustryTagIds.join(', ')}
                   onChange={(e) => handleInputChange('organizationIndustryTagIds', e.target.value.split(',').map(s => s.trim()).filter(s => s))}
                 />
-                <small>Separate multiple industries with commas</small>
-              </div>
-            </div>
-
-            <div className="form-section">
-              <h3>Results Per Page</h3>
-              <div className="form-group">
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  placeholder="10"
-                  value={searchParams.perPage}
-                  onChange={(e) => handleInputChange('perPage', parseInt(e.target.value) || 10)}
-                />
-                <small>Number of organizations to return</small>
               </div>
             </div>
           </>

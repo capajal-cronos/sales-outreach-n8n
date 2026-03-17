@@ -87,10 +87,12 @@ export async function handleOrganizationError(req, res) {
 /**
  * Handle organization success from n8n
  * POST endpoint to update organization with success status
+ * If organization doesn't exist, it will be created
  */
 export async function handleOrganizationSuccess(req, res) {
   try {
-    const { domain, id } = req.body;
+    const orgData = req.body;
+    const { domain, id, name } = orgData;
     
     if (!domain && !id) {
       return res.status(400).json({
@@ -100,19 +102,35 @@ export async function handleOrganizationSuccess(req, res) {
     }
 
     // Find organization
-    const { getOrganizationById, getOrganizationByDomain } = await import('./serverDatabase.js');
-    const org = id
+    const { getOrganizationById } = await import('./serverDatabase.js');
+    let org = id
       ? await getOrganizationById(id)
       : await getOrganizationByDomain(domain);
 
     if (!org) {
-      return res.status(404).json({
-        success: false,
-        error: 'Organization not found'
+      // Organization doesn't exist, create it with success status
+      const newOrg = {
+        name: name || orgData.organization_name || '',
+        domain: domain || orgData.website_url || '',
+        industry: orgData.industry || '',
+        employees: orgData.employees || '',
+        location: orgData.location || '',
+        revenue: orgData.revenue || '',
+        description: orgData.description || '',
+        processed: 'yes',
+        error_message: ''
+      };
+
+      const newId = await addOrganization(newOrg);
+
+      return res.status(201).json({
+        success: true,
+        message: 'Organization created and marked as processed',
+        id: newId
       });
     }
 
-    // Update with success status
+    // Update existing organization with success status
     await updateOrganization(org.id, {
       processed: 'yes',
       error_message: '',
