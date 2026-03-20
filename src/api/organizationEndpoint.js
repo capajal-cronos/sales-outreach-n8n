@@ -332,3 +332,133 @@ export async function handleDeleteOrganization(req, res) {
     });
   }
 }
+
+/**
+ * Store Apollo search results
+ * POST endpoint to receive organizations found by Apollo
+ *
+ * Expected body:
+ * {
+ *   apollo_id: string,
+ *   name: string,
+ *   website_url: string,
+ *   linkedin_url: string
+ * }
+ */
+export async function handleApolloSearchResults(req, res) {
+  try {
+    const apolloOrgs = Array.isArray(req.body) ? req.body : [req.body];
+    
+    // Validate required fields
+    for (const org of apolloOrgs) {
+      if (!org.apollo_id || !org.name) {
+        return res.status(400).json({
+          success: false,
+          error: 'apollo_id and name are required for each organization'
+        });
+      }
+    }
+
+    // Store in a temporary table/collection for review
+    const { storeApolloResults } = await import('./serverDatabase.js');
+    const stored = await storeApolloResults(apolloOrgs);
+
+    return res.status(201).json({
+      success: true,
+      message: `Stored ${stored} Apollo organizations for review`,
+      count: stored
+    });
+  } catch (error) {
+    console.error('Error storing Apollo results:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Get pending Apollo organizations
+ * GET endpoint to retrieve organizations awaiting review
+ */
+export async function handleGetPendingApolloOrgs(req, res) {
+  try {
+    const { getPendingApolloOrganizations } = await import('./serverDatabase.js');
+    const pendingOrgs = await getPendingApolloOrganizations();
+    
+    return res.status(200).json({
+      success: true,
+      data: pendingOrgs,
+      count: pendingOrgs.length
+    });
+  } catch (error) {
+    console.error('Error getting pending Apollo organizations:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Accept or decline Apollo organizations
+ * POST endpoint to process user decisions on Apollo results
+ *
+ * Expected body:
+ * {
+ *   decisions: [
+ *     { apollo_id: string, action: 'accept' | 'decline' }
+ *   ]
+ * }
+ */
+export async function handleApolloDecisions(req, res) {
+  try {
+    const { decisions } = req.body;
+    
+    if (!Array.isArray(decisions)) {
+      return res.status(400).json({
+        success: false,
+        error: 'decisions must be an array'
+      });
+    }
+    
+    /**
+     * Clear all Apollo pending organizations
+     * DELETE endpoint to reset the Apollo pending queue
+     */
+    export async function handleClearApolloPending(req, res) {
+      try {
+        const { clearApolloPending } = await import('./serverDatabase.js');
+        await clearApolloPending();
+        
+        return res.status(200).json({
+          success: true,
+          message: 'Apollo pending queue cleared'
+        });
+      } catch (error) {
+        console.error('Error clearing Apollo pending:', error);
+        return res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    }
+
+    const { processApolloDecisions } = await import('./serverDatabase.js');
+    const result = await processApolloDecisions(decisions);
+
+    return res.status(200).json({
+      success: true,
+      message: `Processed ${result.accepted} accepted and ${result.declined} declined organizations`,
+      accepted: result.acceptedOrganizations,
+      acceptedCount: result.accepted,
+      declinedCount: result.declined
+    });
+  } catch (error) {
+    console.error('Error processing Apollo decisions:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}

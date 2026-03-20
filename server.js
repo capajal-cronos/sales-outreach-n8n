@@ -7,7 +7,11 @@ import {
   handleGetStatistics,
   handleImportOrganizations,
   handleDeleteOrganization,
-  handleAddOrganization
+  handleAddOrganization,
+  handleApolloSearchResults,
+  handleGetPendingApolloOrgs,
+  handleApolloDecisions,
+  handleClearApolloPending
 } from './src/api/organizationEndpoint.js';
 
 const app = express();
@@ -57,6 +61,26 @@ app.post('/api/organization/success', async (req, res) => {
   await handleOrganizationSuccess(req, res);
 });
 
+// Apollo search results endpoint - receive organizations from Apollo search
+app.post('/api/apollo/results', async (req, res) => {
+  await handleApolloSearchResults(req, res);
+});
+
+// Get pending Apollo organizations for review
+app.get('/api/apollo/pending', async (req, res) => {
+  await handleGetPendingApolloOrgs(req, res);
+});
+
+// Process Apollo decisions (accept/decline)
+app.post('/api/apollo/decisions', async (req, res) => {
+  await handleApolloDecisions(req, res);
+});
+
+// Clear Apollo pending queue
+app.delete('/api/apollo/pending', async (req, res) => {
+  await handleClearApolloPending(req, res);
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Organization API server running on http://localhost:${PORT}`);
@@ -67,4 +91,8 @@ app.listen(PORT, () => {
   console.log(`🗑️  DEL  http://localhost:${PORT}/api/organizations/:id - Delete organization`);
   console.log(`❌ POST http://localhost:${PORT}/api/organization/error - Mark as error (n8n)`);
   console.log(`✅ POST http://localhost:${PORT}/api/organization/success - Mark as success (n8n)`);
+  console.log(`🔍 POST http://localhost:${PORT}/api/apollo/results - Store Apollo search results`);
+  console.log(`📋 GET  http://localhost:${PORT}/api/apollo/pending - Get pending Apollo organizations`);
+  console.log(`✔️  POST http://localhost:${PORT}/api/apollo/decisions - Accept/decline Apollo orgs`);
+  console.log(`🧹 DEL  http://localhost:${PORT}/api/apollo/pending - Clear Apollo pending queue`);
 });
