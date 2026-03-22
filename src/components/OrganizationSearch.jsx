@@ -33,7 +33,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   const [locationInput, setLocationInput] = useState('');
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [apolloPendingOrgs, setApolloPendingOrgs] = useState([]);
-  const [selectedApolloOrgs, setSelectedApolloOrgs] = useState(new Set());
+  const [showApolloModal, setShowApolloModal] = useState(false);
+  const [processingOrgId, setProcessingOrgId] = useState(null);
   const fileInputRef = useRef(null);
   const locationInputRef = useRef(null);
 
@@ -41,6 +42,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL;
   const N8N_FILTERS_WEBHOOK_URL = import.meta.env.VITE_N8N_FILTERS_WEBHOOK_URL || 'https://aigeneers.app.n8n.cloud/webhook-test/organization-filters';
   const N8N_FILE_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook-test/organizations-file';
+  const N8N_APOLLO_ACCEPTED_URL = import.meta.env.VITE_N8N_APOLLO_ACCEPTED_URL || 'https://aigeneers.app.n8n.cloud/webhook-test/apollo-accepted-organizations';
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 
   // Initialize database and load organizations on mount
@@ -54,14 +56,30 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     init();
   }, []);
 
+  // Poll for new Apollo results every 5 seconds
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadApolloPendingOrgs(true); // Pass true to indicate polling
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [apolloPendingOrgs.length]);
+
   // Load pending Apollo organizations
-  const loadApolloPendingOrgs = async () => {
+  const loadApolloPendingOrgs = async (isPolling = false) => {
     try {
       const response = await fetch('http://localhost:3001/api/apollo/pending');
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
-          setApolloPendingOrgs(data.data);
+          const newOrgs = data.data;
+          
+          // If polling and we have new organizations, show modal
+          if (isPolling && newOrgs.length > apolloPendingOrgs.length) {
+            setShowApolloModal(true);
+          }
+          
+          setApolloPendingOrgs(newOrgs);
         }
       }
     } catch (err) {
@@ -461,59 +479,116 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     }
   };
 
-  // Handle Apollo organization selection
-  const handleApolloToggle = (apolloId) => {
-    setSelectedApolloOrgs(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(apolloId)) {
-        newSet.delete(apolloId);
-      } else {
-        newSet.add(apolloId);
-      }
-      return newSet;
-    });
-  };
-
-  // Handle Apollo decisions
-  const handleApolloDecisions = async (action) => {
-    if (selectedApolloOrgs.size === 0) {
-      alert('Please select at least one organization');
-      return;
-    }
-
-    const decisions = Array.from(selectedApolloOrgs).map(apolloId => ({
-      apollo_id: apolloId,
-      action: action
-    }));
-
+  // Handle individual Apollo decision (accept/decline)
+  const handleApolloDecision = async (apolloId, action) => {
+    setProcessingOrgId(apolloId);
+    
     try {
+      const decisions = [{
+        apollo_id: apolloId,
+        action: action
+      }];
+
       const response = await fetch('http://localhost:3001/api/apollo/decisions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decisions })
       });
 
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          alert(`${action === 'accept' ? 'Accepted' : 'Declined'} ${selectedApolloOrgs.size} organizations`);
-          
           // If accepted, show the accepted organizations
           if (action === 'accept' && data.accepted && data.accepted.length > 0) {
             setSearchResults(data.accepted);
           }
           
-          // Reload pending list and clear selection
+          // Reload pending list and database
           await loadApolloPendingOrgs();
           await loadDbOrganizations();
-          setSelectedApolloOrgs(new Set());
+          
+          // Check if this was the last pending organization
+          const updatedPendingResponse = await fetch('http://localhost:3001/api/apollo/pending');
+          if (updatedPendingResponse.ok) {
+            const updatedPendingData = await updatedPendingResponse.json();
+            if (updatedPendingData.success && updatedPendingData.data.length === 0) {
+              // All organizations processed, automatically send to n8n
+              console.log('All Apollo organizations processed, sending to n8n...');
+              await handleSendAcceptedToN8n(true);
+            }
+          }
         }
       }
     } catch (err) {
-      console.error('Failed to process Apollo decisions:', err);
-      alert('Failed to process decisions');
+      console.error('Failed to process Apollo decision:', err);
+      alert('Failed to process decision');
+    } finally {
+      setProcessingOrgId(null);
+    }
+  };
+
+  // Send accepted organizations to n8n
+  const handleSendAcceptedToN8n = async (isAutomatic = false) => {
+    try {
+      setIsLoading(true);
+      
+      console.log('🔍 Checking for accepted organizations...');
+      console.log('Total organizations in DB:', dbOrganizations.length);
+      
+      // Get all accepted organizations from database
+      const acceptedOrgs = dbOrganizations.filter(org =>
+        org.apollo_id && org.processed === 'success'
+      );
+
+      console.log('Accepted organizations found:', acceptedOrgs.length);
+      console.log('Accepted organizations:', acceptedOrgs);
+
+      if (acceptedOrgs.length === 0) {
+        console.log('⚠️ No accepted Apollo organizations to send');
+        if (!isAutomatic) {
+          alert('No accepted Apollo organizations to send');
+        }
+        return;
+      }
+
+      const payload = {
+        organizations: acceptedOrgs,
+        count: acceptedOrgs.length,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('📤 Sending to n8n webhook:', N8N_APOLLO_ACCEPTED_URL);
+      console.log('📦 Payload:', JSON.stringify(payload, null, 2));
+
+      // Send to n8n webhook
+      const response = await fetch(N8N_APOLLO_ACCEPTED_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      console.log('📥 Response status:', response.status, response.statusText);
+
+      if (response.ok) {
+        const responseData = await response.text();
+        console.log('📥 Response data:', responseData);
+        
+        const message = `✅ Successfully sent ${acceptedOrgs.length} accepted organizations to n8n!`;
+        console.log(message);
+        alert(message);
+        setShowApolloModal(false);
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Error response:', errorText);
+        throw new Error(`Failed to send to n8n: ${response.status} ${response.statusText}`);
+      }
+    } catch (err) {
+      console.error('❌ Failed to send accepted organizations to n8n:', err);
+      if (!isAutomatic) {
+        alert('❌ Failed to send organizations to n8n. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -551,44 +626,155 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         <h2>🏢 Find Organizations</h2>
       </div>
 
-      {/* Apollo Pending Organizations */}
-      {apolloPendingOrgs.length > 0 && (
+      {/* Apollo Modal */}
+      {showApolloModal && apolloPendingOrgs.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '2rem',
+            maxWidth: '90%',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ margin: 0, color: '#2c3e50' }}>🔍 New Apollo Search Results ({apolloPendingOrgs.length})</h2>
+              <button
+                onClick={() => setShowApolloModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  color: '#7f8c8d'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ color: '#7f8c8d', marginBottom: '1.5rem' }}>Review and accept or decline each organization individually:</p>
+            
+            <div style={{ overflowX: 'auto' }}>
+              <table className="pipedrive-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Website</th>
+                    <th>LinkedIn</th>
+                    <th style={{ width: '200px' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {apolloPendingOrgs.map(org => (
+                    <tr key={org.apollo_id}>
+                      <td><strong>{org.name}</strong></td>
+                      <td>
+                        {org.website_url ? (
+                          <a href={org.website_url.startsWith('http') ? org.website_url : `https://${org.website_url}`} target="_blank" rel="noopener noreferrer">
+                            {org.website_url}
+                          </a>
+                        ) : '-'}
+                      </td>
+                      <td>
+                        {org.linkedin_url ? (
+                          <a href={org.linkedin_url.startsWith('http') ? org.linkedin_url : `https://${org.linkedin_url}`} target="_blank" rel="noopener noreferrer">
+                            LinkedIn
+                          </a>
+                        ) : '-'}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                          <button
+                            className="btn btn-success"
+                            onClick={() => handleApolloDecision(org.apollo_id, 'accept')}
+                            disabled={processingOrgId === org.apollo_id}
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                          >
+                            {processingOrgId === org.apollo_id ? '⏳' : '✅'} Accept
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleApolloDecision(org.apollo_id, 'decline')}
+                            disabled={processingOrgId === org.apollo_id}
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                          >
+                            {processingOrgId === org.apollo_id ? '⏳' : '❌'} Decline
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send Accepted Organizations to n8n - Shows when no pending orgs */}
+      {apolloPendingOrgs.length === 0 && dbOrganizations.some(org => org.source === 'apollo' && org.processed === 'success') && (
+        <div style={{ marginBottom: '2rem', padding: '1.5rem', backgroundColor: '#d4edda', borderRadius: '8px', border: '2px solid #28a745' }}>
+          <h3 style={{ color: '#155724', marginBottom: '1rem' }}>✅ All Apollo Results Reviewed!</h3>
+          <p style={{ color: '#155724', marginBottom: '1rem' }}>
+            You have {dbOrganizations.filter(org => org.source === 'apollo' && org.processed === 'success').length} accepted organizations ready to send to n8n.
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={handleSendAcceptedToN8n}
+            disabled={isLoading}
+            style={{ padding: '0.75rem 1.5rem', fontSize: '1rem' }}
+          >
+            {isLoading ? '⏳ Sending...' : '🚀 Send Accepted Organizations to n8n'}
+          </button>
+        </div>
+      )}
+
+      {/* Apollo Pending Organizations - Inline View */}
+      {!showApolloModal && apolloPendingOrgs.length > 0 && (
         <div className="apollo-pending-orgs" style={{ marginBottom: '2rem', padding: '1.5rem', backgroundColor: '#fff3cd', borderRadius: '8px', border: '2px solid #ffc107' }}>
-          <h3 style={{ color: '#856404', marginBottom: '1rem' }}>🔍 Apollo Search Results - Review & Accept ({apolloPendingOrgs.length})</h3>
-          <p style={{ color: '#856404', marginBottom: '1rem' }}>Select organizations to accept or decline from Apollo search results:</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ color: '#856404', margin: 0 }}>🔍 Apollo Search Results - Review & Accept ({apolloPendingOrgs.length})</h3>
+            <button
+              onClick={() => setShowApolloModal(true)}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: '#ffc107',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Open Review Modal
+            </button>
+          </div>
+          <p style={{ color: '#856404', marginBottom: '1rem' }}>Review and accept or decline organizations from Apollo search results:</p>
           
           <div className="apollo-table-container" style={{ overflowX: 'auto' }}>
             <table className="pipedrive-table" style={{ width: '100%', backgroundColor: 'white' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '50px' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedApolloOrgs.size === apolloPendingOrgs.length && apolloPendingOrgs.length > 0}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedApolloOrgs(new Set(apolloPendingOrgs.map(org => org.apollo_id)));
-                        } else {
-                          setSelectedApolloOrgs(new Set());
-                        }
-                      }}
-                    />
-                  </th>
                   <th>Name</th>
                   <th>Website</th>
                   <th>LinkedIn</th>
+                  <th style={{ width: '200px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {apolloPendingOrgs.map(org => (
-                  <tr key={org.apollo_id} style={{ backgroundColor: selectedApolloOrgs.has(org.apollo_id) ? '#e7f3ff' : 'white' }}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedApolloOrgs.has(org.apollo_id)}
-                        onChange={() => handleApolloToggle(org.apollo_id)}
-                      />
-                    </td>
+                  <tr key={org.apollo_id}>
                     <td><strong>{org.name}</strong></td>
                     <td>
                       {org.website_url ? (
@@ -604,29 +790,30 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
                         </a>
                       ) : '-'}
                     </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                        <button
+                          className="btn btn-success"
+                          onClick={() => handleApolloDecision(org.apollo_id, 'accept')}
+                          disabled={processingOrgId === org.apollo_id}
+                          style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                        >
+                          {processingOrgId === org.apollo_id ? '⏳' : '✅'} Accept
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleApolloDecision(org.apollo_id, 'decline')}
+                          disabled={processingOrgId === org.apollo_id}
+                          style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                        >
+                          {processingOrgId === org.apollo_id ? '⏳' : '❌'} Decline
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-          
-          <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-            <button
-              className="btn btn-success"
-              onClick={() => handleApolloDecisions('accept')}
-              disabled={selectedApolloOrgs.size === 0}
-              style={{ padding: '0.75rem 1.5rem' }}
-            >
-              ✅ Accept Selected ({selectedApolloOrgs.size})
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={() => handleApolloDecisions('decline')}
-              disabled={selectedApolloOrgs.size === 0}
-              style={{ padding: '0.75rem 1.5rem' }}
-            >
-              ❌ Decline Selected ({selectedApolloOrgs.size})
-            </button>
           </div>
         </div>
       )}

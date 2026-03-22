@@ -123,7 +123,21 @@ async function readApolloPending() {
   try {
     await ensureDataDir();
     const data = await fs.readFile(APOLLO_PENDING_FILE, 'utf-8');
-    return JSON.parse(data);
+    
+    // Trim any whitespace and validate JSON
+    const trimmedData = data.trim();
+    if (!trimmedData) {
+      return [];
+    }
+    
+    try {
+      return JSON.parse(trimmedData);
+    } catch (parseError) {
+      console.error('JSON parse error in apollo_pending.json, resetting file:', parseError);
+      // If JSON is corrupted, reset to empty array
+      await writeApolloPending([]);
+      return [];
+    }
   } catch (error) {
     if (error.code === 'ENOENT') {
       return [];
@@ -132,10 +146,37 @@ async function readApolloPending() {
   }
 }
 
-// Write Apollo pending database
+// Write Apollo pending database with atomic write
 async function writeApolloPending(data) {
   await ensureDataDir();
-  await fs.writeFile(APOLLO_PENDING_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  const jsonString = JSON.stringify(data, null, 2);
+  
+  try {
+    // Check if target file exists
+    let targetExists = false;
+    try {
+      await fs.access(APOLLO_PENDING_FILE);
+      targetExists = true;
+    } catch (err) {
+      // File doesn't exist
+    }
+    
+    // Write to a temporary file first
+    const tempFile = APOLLO_PENDING_FILE + '.tmp';
+    await fs.writeFile(tempFile, jsonString, 'utf-8');
+    
+    // On Windows, delete target file first if it exists before rename
+    if (targetExists) {
+      await fs.unlink(APOLLO_PENDING_FILE);
+    }
+    
+    // Rename temp file to target (atomic operation)
+    await fs.rename(tempFile, APOLLO_PENDING_FILE);
+  } catch (error) {
+    // Fallback to direct write if atomic write fails
+    console.error('Atomic write failed, using direct write:', error);
+    await fs.writeFile(APOLLO_PENDING_FILE, jsonString, 'utf-8');
+  }
 }
 
 // Store Apollo search results for review
@@ -177,6 +218,7 @@ export async function processApolloDecisions(decisions) {
   let accepted = 0;
   let declined = 0;
   const acceptedOrganizations = [];
+  const processedIds = [];
   
   for (const decision of decisions) {
     const pendingOrg = pending.find(p => p.apollo_id === decision.apollo_id);
@@ -186,45 +228,52 @@ export async function processApolloDecisions(decisions) {
     }
     
     if (decision.action === 'accept') {
-      // Add to main organizations database
-      const maxId = orgs.length > 0 ? Math.max(...orgs.map(o => o.id || 0)) : 0;
-      const newId = maxId + 1;
+      // Check if organization already exists in database by apollo_id
+      const existingOrg = orgs.find(o => o.apollo_id === pendingOrg.apollo_id);
       
-      const newOrg = {
-        id: newId,
-        name: pendingOrg.name,
-        domain: pendingOrg.website_url,
-        linkedin: pendingOrg.linkedin_url,
-        apollo_id: pendingOrg.apollo_id,
-        industry: '',
-        employees: '',
-        location: '',
-        revenue: '',
-        description: '',
-        processed: '',
-        error_message: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      
-      orgs.push(newOrg);
-      acceptedOrganizations.push(newOrg);
-      
-      // Mark as accepted in pending
-      pendingOrg.status = 'accepted';
-      pendingOrg.accepted_at = new Date().toISOString();
+      if (existingOrg) {
+        console.log(`Organization with apollo_id ${pendingOrg.apollo_id} already exists, skipping...`);
+        acceptedOrganizations.push(existingOrg);
+      } else {
+        // Add to main organizations database
+        const maxId = orgs.length > 0 ? Math.max(...orgs.map(o => o.id || 0)) : 0;
+        const newId = maxId + 1;
+        
+        const newOrg = {
+          id: newId,
+          name: pendingOrg.name,
+          domain: pendingOrg.website_url,
+          linkedin: pendingOrg.linkedin_url,
+          apollo_id: pendingOrg.apollo_id,
+          industry: '',
+          employees: '',
+          location: '',
+          revenue: '',
+          description: '',
+          processed: 'success',
+          error_message: '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        orgs.push(newOrg);
+        acceptedOrganizations.push(newOrg);
+      }
       accepted++;
     } else if (decision.action === 'decline') {
-      // Mark as declined in pending
-      pendingOrg.status = 'declined';
-      pendingOrg.declined_at = new Date().toISOString();
       declined++;
     }
+    
+    // Mark this ID for removal from pending
+    processedIds.push(pendingOrg.apollo_id);
   }
+  
+  // Remove processed organizations from pending list
+  const updatedPending = pending.filter(org => !processedIds.includes(org.apollo_id));
   
   // Save both databases
   await writeDatabase(orgs);
-  await writeApolloPending(pending);
+  await writeApolloPending(updatedPending);
   
   return {
     accepted,
@@ -237,6 +286,17 @@ export async function processApolloDecisions(decisions) {
 export async function clearApolloPending() {
   await writeApolloPending([]);
   return true;
+}
+
+// Initialize Apollo pending on startup
+export async function initializeApolloPending() {
+  try {
+    await ensureDataDir();
+    await writeApolloPending([]);
+    console.log('✅ Apollo pending database initialized (cleared)');
+  } catch (error) {
+    console.error('Failed to initialize Apollo pending database:', error);
+  }
 }
 
 // Check if organization exists by domain

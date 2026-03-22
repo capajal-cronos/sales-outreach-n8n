@@ -421,28 +421,6 @@ export async function handleApolloDecisions(req, res) {
         error: 'decisions must be an array'
       });
     }
-    
-    /**
-     * Clear all Apollo pending organizations
-     * DELETE endpoint to reset the Apollo pending queue
-     */
-    export async function handleClearApolloPending(req, res) {
-      try {
-        const { clearApolloPending } = await import('./serverDatabase.js');
-        await clearApolloPending();
-        
-        return res.status(200).json({
-          success: true,
-          message: 'Apollo pending queue cleared'
-        });
-      } catch (error) {
-        console.error('Error clearing Apollo pending:', error);
-        return res.status(500).json({
-          success: false,
-          error: error.message
-        });
-      }
-    }
 
     const { processApolloDecisions } = await import('./serverDatabase.js');
     const result = await processApolloDecisions(decisions);
@@ -456,6 +434,28 @@ export async function handleApolloDecisions(req, res) {
     });
   } catch (error) {
     console.error('Error processing Apollo decisions:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Clear all Apollo pending organizations
+ * DELETE endpoint to reset the Apollo pending queue
+ */
+export async function handleClearApolloPending(req, res) {
+  try {
+    const { clearApolloPending } = await import('./serverDatabase.js');
+    await clearApolloPending();
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Apollo pending queue cleared'
+    });
+  } catch (error) {
+    console.error('Error clearing Apollo pending:', error);
     return res.status(500).json({
       success: false,
       error: error.message

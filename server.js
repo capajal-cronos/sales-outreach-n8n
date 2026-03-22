@@ -13,9 +13,13 @@ import {
   handleApolloDecisions,
   handleClearApolloPending
 } from './src/api/organizationEndpoint.js';
+import { initializeApolloPending } from './src/api/serverDatabase.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Initialize Apollo pending database on startup
+await initializeApolloPending();
 
 // Middleware
 app.use(cors());
