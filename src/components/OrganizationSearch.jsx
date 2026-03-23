@@ -95,7 +95,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     setDbStats(stats);
   };
 
-  // Fetch organizations from Pipedrive and import to database
+  // Fetch organizations from Pipedrive (display only, don't import to DB)
   const fetchPipedriveOrganizations = async () => {
     try {
       // Fetch organizations with all fields
@@ -125,23 +125,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
           );
           
           setPipedriveOrganizations(detailedOrgs);
-          
-          // Import Pipedrive organizations to database
-          const orgsToImport = detailedOrgs.map(org => ({
-            name: org.name || '',
-            domain: org.website || org.address || '',
-            industry: '',
-            employees: org.people_count?.toString() || '',
-            location: org.address || '',
-            revenue: '',
-            description: '',
-            processed: 'pipedrive',
-            error_message: ''
-          }));
-          
-          // Import to database (will skip duplicates)
-          await importOrganizations(orgsToImport);
-          await loadDbOrganizations();
+          // NOTE: Organizations are NOT automatically imported to database
+          // They will be added only after /api/organization/success is called by n8n workflow
         }
       }
     } catch (err) {
@@ -819,7 +804,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
       )}
 
       {/* Pipedrive Organizations */}
-      {pipedriveOrganizations.length > 0 && (
+      {pipedriveOrganizations.length > 0 ? (
         <div className="pipedrive-orgs">
           <h3>📋 Organizations in Pipedrive ({pipedriveOrganizations.length})</h3>
           <div className="pipedrive-table-container">
@@ -856,6 +841,20 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
               </tbody>
             </table>
           </div>
+        </div>
+      ) : (
+        <div style={{
+          padding: '2rem',
+          backgroundColor: '#f8f9fa',
+          borderRadius: '8px',
+          textAlign: 'center',
+          marginBottom: '2rem',
+          border: '2px dashed #dee2e6'
+        }}>
+          <h3 style={{ color: '#6c757d', marginBottom: '0.5rem' }}>📭 No Organizations Found</h3>
+          <p style={{ color: '#6c757d', margin: 0 }}>
+            No organizations or persons found in Pipedrive. Add some organizations to get started!
+          </p>
         </div>
       )}
 
@@ -1211,44 +1210,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         </div>
       </div>
 
-      {searchResults.length > 0 && (
-        <div className="search-results">
-          <div className="results-header">
-            <h3>Search Results ({searchResults.length})</h3>
-            <button 
-              className="btn btn-success"
-              onClick={handleSaveToPipedrive}
-            >
-              💾 Save to Pipedrive & Continue
-            </button>
-          </div>
-
-          <div className="results-grid">
-            {searchResults.map((org, idx) => (
-              <div key={org.id || idx} className="organization-card">
-                <div className="card-header">
-                  <h4>{org.name}</h4>
-                  <button 
-                    className="btn-icon"
-                    onClick={() => handleRemoveOrganization(org.id || idx)}
-                    title="Remove"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="card-body">
-                  {org.domain && <p><strong>🌐 Domain:</strong> {org.domain}</p>}
-                  {org.industry && <p><strong>🏭 Industry:</strong> {org.industry}</p>}
-                  {org.employees && <p><strong>👥 Employees:</strong> {org.employees}</p>}
-                  {org.location && <p><strong>📍 Location:</strong> {org.location}</p>}
-                  {org.revenue && <p><strong>💰 Revenue:</strong> {org.revenue}</p>}
-                  {org.description && <p className="description">{org.description}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
     </div>
   );

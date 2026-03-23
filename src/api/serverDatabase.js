@@ -24,7 +24,23 @@ async function readDatabase() {
   try {
     await ensureDataDir();
     const data = await fs.readFile(DB_FILE, 'utf-8');
-    return JSON.parse(data);
+    
+    // Trim any whitespace and validate JSON
+    const trimmedData = data.trim();
+    if (!trimmedData) {
+      // If file is empty, initialize with empty array
+      await writeDatabase([]);
+      return [];
+    }
+    
+    try {
+      return JSON.parse(trimmedData);
+    } catch (parseError) {
+      console.error('JSON parse error in organizations.json, resetting file:', parseError);
+      // If JSON is corrupted, reset to empty array
+      await writeDatabase([]);
+      return [];
+    }
   } catch (error) {
     // If file doesn't exist, return empty array
     if (error.code === 'ENOENT') {
