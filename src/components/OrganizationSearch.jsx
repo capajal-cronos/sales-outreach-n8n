@@ -22,6 +22,25 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     perPage: 5
   });
 
+  // Helper function to clean domain URLs
+  const cleanDomain = (domain) => {
+    if (!domain) return '';
+    
+    let cleaned = domain.trim();
+    
+    // Remove protocol (http://, https://, etc.)
+    cleaned = cleaned.replace(/^https?:\/\//i, '');
+    cleaned = cleaned.replace(/^www\./i, '');
+    
+    // Remove trailing slashes and paths
+    cleaned = cleaned.split('/')[0];
+    
+    // Remove port numbers if any
+    cleaned = cleaned.split(':')[0];
+    
+    return cleaned.toLowerCase();
+  };
+
   const [uploadedFile, setUploadedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
@@ -39,8 +58,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   const locationInputRef = useRef(null);
 
   // Get configuration from environment variables
-  const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL;
-  const N8N_FILTERS_WEBHOOK_URL = import.meta.env.VITE_N8N_FILTERS_WEBHOOK_URL || 'https://aigeneers.app.n8n.cloud/webhook-test/organization-filters';
+  const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL_MANUAL_ORGANIZATION;
+  const N8N_FILTERS_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL_FILTERS_ORGANIZATION || 'https://aigeneers.app.n8n.cloud/webhook-test/organization-filters';
   const N8N_FILE_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook-test/organizations-file';
   const N8N_APOLLO_ACCEPTED_URL = import.meta.env.VITE_N8N_APOLLO_ACCEPTED_URL || 'https://aigeneers.app.n8n.cloud/webhook-test/apollo-accepted-organizations';
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
@@ -95,7 +114,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     setDbStats(stats);
   };
 
-  // Fetch organizations from Pipedrive (display only, don't import to DB)
+  // Fetch organizations from Pipedrive and sync to database
   const fetchPipedriveOrganizations = async () => {
     try {
       // Fetch organizations with all fields
@@ -125,12 +144,62 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
           );
           
           setPipedriveOrganizations(detailedOrgs);
-          // NOTE: Organizations are NOT automatically imported to database
-          // They will be added only after /api/organization/success is called by n8n workflow
+          
+          // Sync Pipedrive organizations to database
+          await syncPipedriveToDatabase(detailedOrgs);
         }
       }
     } catch (err) {
       console.error('Failed to fetch Pipedrive organizations:', err);
+    }
+  };
+
+  // Sync Pipedrive organizations to local database
+  const syncPipedriveToDatabase = async (pipedriveOrgs) => {
+    try {
+      const dbOrgs = await getAllOrganizations();
+      let syncedCount = 0;
+      
+      for (const pipedriveOrg of pipedriveOrgs) {
+        // Extract domain from website URL or address
+        let domain = '';
+        if (pipedriveOrg.website) {
+          domain = pipedriveOrg.website;
+        } else if (pipedriveOrg.address) {
+          domain = pipedriveOrg.address;
+        }
+        
+        // Check if organization already exists in database by domain or name
+        const existsInDb = dbOrgs.find(dbOrg =>
+          (domain && dbOrg.domain === domain) ||
+          (pipedriveOrg.name && dbOrg.name === pipedriveOrg.name)
+        );
+        
+        if (!existsInDb) {
+          // Add to database
+          const newOrg = {
+            name: pipedriveOrg.name || '',
+            domain: domain,
+            industry: '',
+            employees: pipedriveOrg.people_count ? String(pipedriveOrg.people_count) : '',
+            location: pipedriveOrg.address || '',
+            revenue: '',
+            description: '',
+            processed: 'pipedrive',
+            error_message: ''
+          };
+          
+          await addOrganization(newOrg);
+          syncedCount++;
+        }
+      }
+      
+      if (syncedCount > 0) {
+        console.log(`Synced ${syncedCount} new organizations from Pipedrive to database`);
+        await loadDbOrganizations(); // Reload database to show new orgs
+      }
+    } catch (err) {
+      console.error('Failed to sync Pipedrive organizations to database:', err);
     }
   };
 
@@ -158,11 +227,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
 
   // Common locations for dropdown
   const commonLocations = [
-    'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany',
-    'France', 'Netherlands', 'Belgium', 'Spain', 'Italy', 'Switzerland',
+    'Belgium', 'Netherlands', 'Luxembourg', 'Germany', 'France', 'United Kingdom',
+    'Spain', 'Italy', 'Switzerland', 'Canada', 'Australia', 'United States',
     'Sweden', 'Norway', 'Denmark', 'Finland', 'Ireland', 'Austria',
     'Singapore', 'Hong Kong', 'Japan', 'India', 'China', 'Brazil',
-    'Mexico', 'Argentina', 'South Africa', 'United Arab Emirates',
+    'Mexico', 'Argentina', 'United Arab Emirates', 'Albania',
     'New Zealand', 'Poland', 'Czech Republic', 'Portugal', 'Greece'
   ];
 
@@ -219,14 +288,17 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
       if (searchMode === 'manual') {
         const dbOrgs = await getAllOrganizations();
         
+        // Clean domain before checking
+        const cleanedDomain = cleanDomain(searchParams.organizationDomain);
+        
         // Check by domain if provided
-        if (searchParams.organizationDomain) {
+        if (cleanedDomain) {
           const existingByDomain = dbOrgs.find(org =>
-            org.domain && org.domain.toLowerCase() === searchParams.organizationDomain.toLowerCase()
+            org.domain && cleanDomain(org.domain) === cleanedDomain
           );
           
           if (existingByDomain) {
-            setError(`Organization with domain "${searchParams.organizationDomain}" already exists in database (ID: ${existingByDomain.id})`);
+            setError(`Organization with domain "${cleanedDomain}" already exists in database (ID: ${existingByDomain.id})`);
             setIsLoading(false);
             return;
           }
@@ -312,10 +384,13 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         // If domain is provided, return only 1 result, otherwise use perPage
         const resultsPerPage = searchParams.organizationDomain ? 1 : searchParams.perPage;
         
+        // Clean domain before sending
+        const cleanedDomain = cleanDomain(searchParams.organizationDomain);
+        
         requestBody = {
           mode: 'manual',
           q_organization_name: searchParams.organizationName || "",
-          organization_domain: searchParams.organizationDomain || "",
+          organization_domain: cleanedDomain || "",
           organization_locations: searchParams.organizationLocations.map(loc => `"${loc}"`).join(', '),
           organizationNumEmployeesRanges: [],
           organizationIndustryTagIds: [],
@@ -630,8 +705,10 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
             borderRadius: '12px',
             padding: '2rem',
             maxWidth: '90%',
-            maxHeight: '90vh',
-            overflow: 'auto',
+            width: '1200px',
+            height: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
             boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -651,7 +728,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
             </div>
             <p style={{ color: '#7f8c8d', marginBottom: '1.5rem' }}>Review and accept or decline each organization individually:</p>
             
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
               <table className="pipedrive-table" style={{ width: '100%' }}>
                 <thead>
                   <tr>

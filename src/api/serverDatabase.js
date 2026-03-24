@@ -9,6 +9,25 @@ const __dirname = path.dirname(__filename);
 const DB_FILE = path.join(__dirname, '../../data/organizations.json');
 const APOLLO_PENDING_FILE = path.join(__dirname, '../../data/apollo_pending.json');
 
+// Helper function to clean domain URLs
+function cleanDomain(domain) {
+  if (!domain) return '';
+  
+  let cleaned = domain.trim();
+  
+  // Remove protocol (http://, https://, etc.)
+  cleaned = cleaned.replace(/^https?:\/\//i, '');
+  cleaned = cleaned.replace(/^www\./i, '');
+  
+  // Remove trailing slashes and paths
+  cleaned = cleaned.split('/')[0];
+  
+  // Remove port numbers if any
+  cleaned = cleaned.split(':')[0];
+  
+  return cleaned.toLowerCase();
+}
+
 // Ensure data directory exists
 async function ensureDataDir() {
   const dataDir = path.dirname(DB_FILE);
@@ -77,6 +96,27 @@ export async function getOrganizationById(id) {
 export async function addOrganization(orgData) {
   const orgs = await readDatabase();
   
+  // Clean domain before processing
+  const cleanedDomain = cleanDomain(orgData.domain);
+  
+  // Check for duplicates by apollo_id or domain
+  const duplicate = orgs.find(org => {
+    // Check by apollo_id if both have it
+    if (orgData.apollo_id && org.apollo_id === orgData.apollo_id) {
+      return true;
+    }
+    // Check by domain if both have it and it's not empty
+    if (cleanedDomain && org.domain && cleanDomain(org.domain) === cleanedDomain) {
+      return true;
+    }
+    return false;
+  });
+  
+  if (duplicate) {
+    console.log(`Duplicate organization found: ${orgData.name} (apollo_id: ${orgData.apollo_id}, domain: ${cleanedDomain})`);
+    return duplicate.id; // Return existing ID instead of creating duplicate
+  }
+  
   // Generate new ID
   const maxId = orgs.length > 0 ? Math.max(...orgs.map(o => o.id || 0)) : 0;
   const newId = maxId + 1;
@@ -84,7 +124,7 @@ export async function addOrganization(orgData) {
   const newOrg = {
     id: newId,
     name: orgData.name || '',
-    domain: orgData.domain || '',
+    domain: cleanedDomain || '',
     industry: orgData.industry || '',
     employees: orgData.employees || '',
     location: orgData.location || '',
@@ -92,6 +132,8 @@ export async function addOrganization(orgData) {
     description: orgData.description || '',
     processed: orgData.processed || '',
     error_message: orgData.error_message || '',
+    apollo_id: orgData.apollo_id || '',
+    linkedin: orgData.linkedin || '',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -167,30 +209,14 @@ async function writeApolloPending(data) {
   await ensureDataDir();
   const jsonString = JSON.stringify(data, null, 2);
   
+  // On Windows, direct write is more reliable due to file locking issues
+  // Atomic writes can fail when VS Code or other processes have the file open
   try {
-    // Check if target file exists
-    let targetExists = false;
-    try {
-      await fs.access(APOLLO_PENDING_FILE);
-      targetExists = true;
-    } catch (err) {
-      // File doesn't exist
-    }
-    
-    // Write to a temporary file first
-    const tempFile = APOLLO_PENDING_FILE + '.tmp';
-    await fs.writeFile(tempFile, jsonString, 'utf-8');
-    
-    // On Windows, delete target file first if it exists before rename
-    if (targetExists) {
-      await fs.unlink(APOLLO_PENDING_FILE);
-    }
-    
-    // Rename temp file to target (atomic operation)
-    await fs.rename(tempFile, APOLLO_PENDING_FILE);
+    await fs.writeFile(APOLLO_PENDING_FILE, jsonString, 'utf-8');
   } catch (error) {
-    // Fallback to direct write if atomic write fails
-    console.error('Atomic write failed, using direct write:', error);
+    console.error('Failed to write apollo_pending.json:', error);
+    // Retry once after a short delay
+    await new Promise(resolve => setTimeout(resolve, 100));
     await fs.writeFile(APOLLO_PENDING_FILE, jsonString, 'utf-8');
   }
 }
@@ -198,16 +224,28 @@ async function writeApolloPending(data) {
 // Store Apollo search results for review
 export async function storeApolloResults(apolloOrgs) {
   const pending = await readApolloPending();
+  const mainDb = await readDatabase();
   let stored = 0;
   
   for (const org of apolloOrgs) {
-    // Check if already exists in pending
-    const exists = pending.find(p => p.apollo_id === org.apollo_id);
-    if (!exists) {
+    // Clean domain before processing
+    const cleanedDomain = cleanDomain(org.website_url);
+    
+    // Check if already exists in pending by apollo_id
+    const existsInPending = pending.find(p => p.apollo_id === org.apollo_id);
+    
+    // Check if already exists in main database by apollo_id or domain
+    const existsInDb = mainDb.find(o =>
+      o.apollo_id === org.apollo_id ||
+      (cleanedDomain && o.domain && cleanDomain(o.domain) === cleanedDomain)
+    );
+    
+    // Only add if it doesn't exist in either pending or main database
+    if (!existsInPending && !existsInDb) {
       pending.push({
         apollo_id: org.apollo_id,
         name: org.name,
-        website_url: org.website_url || '',
+        website_url: cleanedDomain || '',
         linkedin_url: org.linkedin_url || '',
         status: 'pending',
         created_at: new Date().toISOString()

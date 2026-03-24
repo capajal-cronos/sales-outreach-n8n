@@ -337,24 +337,53 @@ export async function handleDeleteOrganization(req, res) {
  * Store Apollo search results
  * POST endpoint to receive organizations found by Apollo
  *
- * Expected body:
- * {
- *   apollo_id: string,
- *   name: string,
- *   website_url: string,
- *   linkedin_url: string
- * }
+ * Expected body formats:
+ * 1. Array: [{ apollo_id, name, website_url, linkedin_url }, ...]
+ * 2. Object with organizations array: { organizations: [...] }
+ * 3. Single object: { apollo_id, name, website_url, linkedin_url }
  */
 export async function handleApolloSearchResults(req, res) {
   try {
-    const apolloOrgs = Array.isArray(req.body) ? req.body : [req.body];
+    console.log('Received Apollo results:', JSON.stringify(req.body, null, 2));
+    console.log('Request body type:', typeof req.body);
+    
+    let apolloOrgs;
+    let bodyData = req.body;
+    
+    // Handle if body is a string (double-stringified JSON)
+    if (typeof bodyData === 'string') {
+      try {
+        bodyData = JSON.parse(bodyData);
+        console.log('Parsed string body to object');
+      } catch (e) {
+        console.error('Failed to parse string body:', e);
+      }
+    }
+    
+    // Handle different input formats
+    if (bodyData.organizations && Array.isArray(bodyData.organizations)) {
+      // Format: { organizations: [...] }
+      apolloOrgs = bodyData.organizations;
+      console.log(`Extracted ${apolloOrgs.length} organizations from wrapper`);
+    } else if (Array.isArray(bodyData)) {
+      // Format: [...]
+      apolloOrgs = bodyData;
+      console.log(`Received ${apolloOrgs.length} organizations as array`);
+    } else {
+      // Format: single object
+      apolloOrgs = [bodyData];
+      console.log('Received single organization object');
+    }
     
     // Validate required fields
-    for (const org of apolloOrgs) {
+    for (let i = 0; i < apolloOrgs.length; i++) {
+      const org = apolloOrgs[i];
       if (!org.apollo_id || !org.name) {
+        console.error(`Validation failed for org at index ${i}:`, org);
         return res.status(400).json({
           success: false,
-          error: 'apollo_id and name are required for each organization'
+          error: `apollo_id and name are required for each organization. Failed at index ${i}`,
+          received: org
         });
       }
     }
