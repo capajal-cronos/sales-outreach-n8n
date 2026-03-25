@@ -54,6 +54,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   const [apolloPendingOrgs, setApolloPendingOrgs] = useState([]);
   const [showApolloModal, setShowApolloModal] = useState(false);
   const [processingOrgId, setProcessingOrgId] = useState(null);
+  const [sessionAcceptedOrgs, setSessionAcceptedOrgs] = useState([]); // Track organizations accepted in this session
   const fileInputRef = useRef(null);
   const locationInputRef = useRef(null);
 
@@ -93,9 +94,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         if (data.success && data.data) {
           const newOrgs = data.data;
           
-          // If polling and we have new organizations, show modal
+          // If polling and we have new organizations, show modal and reset session
           if (isPolling && newOrgs.length > apolloPendingOrgs.length) {
             setShowApolloModal(true);
+            // Clear session accepted organizations when new batch arrives
+            setSessionAcceptedOrgs([]);
           }
           
           setApolloPendingOrgs(newOrgs);
@@ -558,8 +561,12 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          // If accepted, show the accepted organizations
+          let updatedSessionOrgs = sessionAcceptedOrgs;
+          
+          // If accepted, add to session accepted organizations and show them
           if (action === 'accept' && data.accepted && data.accepted.length > 0) {
+            updatedSessionOrgs = [...sessionAcceptedOrgs, ...data.accepted];
+            setSessionAcceptedOrgs(updatedSessionOrgs);
             setSearchResults(data.accepted);
           }
           
@@ -574,7 +581,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
             if (updatedPendingData.success && updatedPendingData.data.length === 0) {
               // All organizations processed, automatically send to n8n
               console.log('All Apollo organizations processed, sending to n8n...');
-              await handleSendAcceptedToN8n(true);
+              // Pass the updated list directly to avoid state timing issues
+              await handleSendAcceptedToN8n(true, updatedSessionOrgs);
             }
           }
         }
@@ -588,23 +596,21 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   };
 
   // Send accepted organizations to n8n
-  const handleSendAcceptedToN8n = async (isAutomatic = false) => {
+  const handleSendAcceptedToN8n = async (isAutomatic = false, orgsToSend = null) => {
     try {
       setIsLoading(true);
       
-      console.log('🔍 Checking for accepted organizations...');
-      console.log('Total organizations in DB:', dbOrganizations.length);
+      console.log('🔍 Checking for accepted organizations in this session...');
       
-      // Get all accepted organizations from database
-      const acceptedOrgs = dbOrganizations.filter(org =>
-        org.apollo_id && org.processed === 'success'
-      );
-
-      console.log('Accepted organizations found:', acceptedOrgs.length);
+      // Use provided organizations or fall back to session state
+      const acceptedOrgs = orgsToSend || sessionAcceptedOrgs;
+      
+      console.log('Session accepted organizations:', sessionAcceptedOrgs.length);
+      console.log('Accepted organizations to send:', acceptedOrgs.length);
       console.log('Accepted organizations:', acceptedOrgs);
 
       if (acceptedOrgs.length === 0) {
-        console.log('⚠️ No accepted Apollo organizations to send');
+        console.log('⚠️ No accepted Apollo organizations to send in this session');
         if (!isAutomatic) {
           alert('No accepted Apollo organizations to send');
         }
@@ -636,6 +642,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         const message = `✅ Successfully sent ${acceptedOrgs.length} accepted organizations to n8n!`;
         console.log(message);
         alert(message);
+        
+        // Clear session accepted organizations after successful send
+        setSessionAcceptedOrgs([]);
         setShowApolloModal(false);
       } else {
         const errorText = await response.text();

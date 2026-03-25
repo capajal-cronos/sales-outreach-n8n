@@ -339,7 +339,7 @@ export async function handleDeleteOrganization(req, res) {
  *
  * Expected body formats:
  * 1. Array: [{ apollo_id, name, website_url, linkedin_url }, ...]
- * 2. Object with organizations array: { organizations: [...] }
+ * 2. Object with organizations array: { organizations: [...], searchQuery: {...} }
  * 3. Single object: { apollo_id, name, website_url, linkedin_url }
  */
 export async function handleApolloSearchResults(req, res) {
@@ -349,6 +349,7 @@ export async function handleApolloSearchResults(req, res) {
     
     let apolloOrgs;
     let bodyData = req.body;
+    let searchQuery = null;
     
     // Handle if body is a string (double-stringified JSON)
     if (typeof bodyData === 'string') {
@@ -364,6 +365,7 @@ export async function handleApolloSearchResults(req, res) {
     if (bodyData.organizations && Array.isArray(bodyData.organizations)) {
       // Format: { organizations: [...] }
       apolloOrgs = bodyData.organizations;
+      searchQuery = bodyData.searchQuery || bodyData.query;
       console.log(`Extracted ${apolloOrgs.length} organizations from wrapper`);
     } else if (Array.isArray(bodyData)) {
       // Format: [...]
@@ -373,6 +375,48 @@ export async function handleApolloSearchResults(req, res) {
       // Format: single object
       apolloOrgs = [bodyData];
       console.log('Received single organization object');
+    }
+    
+    // Handle empty results - add a "not found" record to database
+    if (apolloOrgs.length === 0) {
+      console.log('No organizations found, adding "not found" record');
+      const { addOrganization } = await import('./serverDatabase.js');
+      
+      // Try to extract search info from various possible locations
+      let searchName = 'Unknown search';
+      if (searchQuery) {
+        searchName = searchQuery.q_organization_name ||
+                    searchQuery.organization_domain ||
+                    searchQuery.organizationName ||
+                    searchQuery.organizationDomain ||
+                    'Unknown search';
+      }
+      
+      // Also check if the original request body has the info
+      if (searchName === 'Unknown search' && bodyData.body) {
+        searchName = bodyData.body.q_organization_name ||
+                    bodyData.body.organization_domain ||
+                    'Unknown search';
+      }
+      
+      await addOrganization({
+        name: searchName,
+        domain: '',
+        industry: '',
+        employees: '',
+        location: '',
+        revenue: '',
+        description: 'Apollo search returned no results',
+        processed: 'no organization found',
+        error_message: 'No organizations found in Apollo search'
+      });
+      
+      return res.status(200).json({
+        success: true,
+        message: 'No organizations found, recorded in database',
+        count: 0,
+        organizations: []
+      });
     }
     
     // Validate required fields
