@@ -19,7 +19,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     organizationIndustryTagIds: [],
     personTitles: [],
     revenueRange: [],
-    perPage: 5
+    perPage: 25,  // Increased default to 25 per page
+    maxPages: 4   // Fetch up to 4 pages (100 total results)
   });
 
   // Helper function to clean domain URLs
@@ -439,44 +440,97 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
       // Use different webhook URL for filter-based search
       const webhookUrl = searchMode === 'filters' ? N8N_FILTERS_WEBHOOK_URL : N8N_WEBHOOK_URL;
       
-      console.log('Sending to webhook:', webhookUrl);
-      console.log('Request body:', JSON.stringify(requestBody, null, 2));
+      // Get existing organizations from database to check for duplicates
+      const existingOrgs = await getAllOrganizations();
+      const existingDomains = new Set(
+        existingOrgs
+          .map(org => org.domain ? cleanDomain(org.domain) : null)
+          .filter(domain => domain)
+      );
       
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      });
+      console.log(`Found ${existingDomains.size} existing organizations in database`);
+      
+      // Fetch multiple pages to get more results
+      const maxPages = searchParams.maxPages || 4;
+      const perPage = searchParams.perPage || 25;
+      let allOrganizations = [];
+      let newOrganizations = [];
+      
+      for (let page = 1; page <= maxPages; page++) {
+        console.log(`Fetching page ${page}/${maxPages}...`);
+        
+        // Update page number in request body
+        const pageRequestBody = { ...requestBody, page, per_page: perPage };
+        
+        console.log('Sending to webhook:', webhookUrl);
+        console.log('Request body:', JSON.stringify(pageRequestBody, null, 2));
+        
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(pageRequestBody)
+        });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+        if (!response.ok) {
+          console.error(`HTTP error on page ${page}! status: ${response.status}`);
+          break; // Stop fetching if we get an error
+        }
 
-      const data = await response.json();
-      
-      // Handle the response from n8n - be more flexible with response format
-      let organizations = [];
-      
-      if (data.organizations && Array.isArray(data.organizations)) {
-        organizations = data.organizations;
-      } else if (data.success && data.data) {
-        organizations = Array.isArray(data.data) ? data.data : [data.data];
-      } else if (Array.isArray(data)) {
-        organizations = data;
-      } else if (data.success !== false) {
-        // If webhook returned success (or no explicit failure), treat as success even if format is different
-        organizations = data.data ? [data.data] : [];
+        const data = await response.json();
+        
+        // Handle the response from n8n - be more flexible with response format
+        let organizations = [];
+        
+        if (data.organizations && Array.isArray(data.organizations)) {
+          organizations = data.organizations;
+        } else if (data.success && data.data) {
+          organizations = Array.isArray(data.data) ? data.data : [data.data];
+        } else if (Array.isArray(data)) {
+          organizations = data;
+        } else if (data.success !== false) {
+          organizations = data.data ? [data.data] : [];
+        }
+        
+        console.log(`Page ${page}: Received ${organizations.length} organizations`);
+        
+        // If no results on this page, stop fetching
+        if (organizations.length === 0) {
+          console.log('No more results, stopping pagination');
+          break;
+        }
+        
+        // Filter out organizations that already exist in database
+        const pageNewOrgs = organizations.filter(org => {
+          if (!org.domain) return true; // Keep if no domain to check
+          const cleanedDomain = cleanDomain(org.domain);
+          return !existingDomains.has(cleanedDomain);
+        });
+        
+        console.log(`Page ${page}: ${pageNewOrgs.length} new organizations (${organizations.length - pageNewOrgs.length} duplicates skipped)`);
+        
+        allOrganizations = allOrganizations.concat(organizations);
+        newOrganizations = newOrganizations.concat(pageNewOrgs);
+        
+        // If we got fewer results than perPage, we've reached the end
+        if (organizations.length < perPage) {
+          console.log('Received fewer results than requested, stopping pagination');
+          break;
+        }
       }
       
-      setSearchResults(organizations);
+      console.log(`Total: ${allOrganizations.length} organizations found, ${newOrganizations.length} are new`);
       
-      // Save to database
-      if (organizations.length > 0) {
-        const imported = await importOrganizations(organizations);
+      setSearchResults(newOrganizations);
+      
+      // Save new organizations to database
+      if (newOrganizations.length > 0) {
+        const imported = await importOrganizations(newOrganizations);
         await loadDbOrganizations();
         console.log(`Imported ${imported} new organizations to database`);
+      } else {
+        console.log('No new organizations to import (all were duplicates)');
       }
       
     } catch (err) {

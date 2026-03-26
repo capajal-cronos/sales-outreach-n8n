@@ -286,20 +286,6 @@ function ResponseMonitor({ workflowData, updateWorkflowData, onPrevious }) {
             </div>
           </div>
 
-          <div className="navigation-buttons">
-            <button className="btn btn-secondary" onClick={onPrevious}>
-              ← Previous
-            </button>
-          </div>
-
-          <div className="webhook-info">
-            <h4>🔗 n8n Webhook Integration</h4>
-            <p>To automate response tracking, configure your n8n workflow with webhooks:</p>
-            <code>POST /webhook/track-email-opens</code>
-            <code>POST /webhook/track-email-clicks</code>
-            <code>POST /webhook/process-email-replies</code>
-            <p>These webhooks should capture email engagement events and store them for analysis.</p>
-          </div>
 
           <div className="completion-message">
             <h3>🎉 Workflow Complete!</h3>

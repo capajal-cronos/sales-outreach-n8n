@@ -341,10 +341,7 @@ Best regards,
             </div>
 
             <div className="form-actions">
-              <button className="btn btn-secondary" onClick={onPrevious}>
-                ← Previous
-              </button>
-              <button 
+              <button
                 className="btn btn-primary btn-large"
                 onClick={handleSendCampaign}
                 disabled={isSending || campaign.selectedLeads.length === 0}
@@ -394,12 +391,6 @@ Best regards,
             </div>
           )}
 
-          <div className="webhook-info">
-            <h4>🔗 n8n Webhook Integration</h4>
-            <p>To automate email sending, configure your n8n workflow with a webhook:</p>
-            <code>POST /webhook/send-email-campaign</code>
-            <p>The webhook should accept campaign data and send emails to selected leads.</p>
-          </div>
         </>
       )}
     </div>

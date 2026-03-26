@@ -242,18 +242,6 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
             </>
           )}
 
-          <div className="navigation-buttons">
-            <button className="btn btn-secondary" onClick={onPrevious}>
-              ← Previous
-            </button>
-          </div>
-
-          <div className="webhook-info">
-            <h4>🔗 n8n Webhook Integration</h4>
-            <p>To automate lead creation, configure your n8n workflow with a webhook:</p>
-            <code>POST /webhook/pipedrive-create-leads</code>
-            <p>The webhook should accept people data and create leads in Pipedrive.</p>
-          </div>
         </>
       )}
     </div>
