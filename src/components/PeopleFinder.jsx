@@ -10,7 +10,8 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
     personLocations: [],
     verifiedEmailOnly: false,
     perPage: 25,
-    maxPages: 4
+    maxPages: 4,
+    peoplePerCompany: 5  // New parameter to limit people per company
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -174,8 +175,12 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
 
       // Fetch multiple pages
       const maxPages = searchParams.maxPages || 4;
-      const perPage = searchParams.perPage || 25;
+      const peoplePerCompany = searchParams.peoplePerCompany || 5;
+      // Calculate per_page based on number of companies and people per company
+      const perPage = Math.min(apolloIds.length * peoplePerCompany, 100); // Apollo max is 100
       let allPeople = [];
+
+      console.log(`Requesting ${perPage} people per page (${apolloIds.length} companies × ${peoplePerCompany} people per company)`);
 
       for (let page = 1; page <= maxPages; page++) {
         console.log(`Fetching page ${page}/${maxPages}...`);
@@ -255,9 +260,32 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
         }
       }
 
-      console.log(`Total: ${allPeople.length} people found`);
+      console.log(`Total: ${allPeople.length} people found before limiting`);
       
-      setSearchResults(allPeople);
+      // Limit people per company (peoplePerCompany already declared above)
+      const limitedPeople = [];
+      const companyCount = {};
+      
+      for (const person of allPeople) {
+        const orgId = person.organization_id || person.organization?.id;
+        if (!orgId) {
+          limitedPeople.push(person);
+          continue;
+        }
+        
+        if (!companyCount[orgId]) {
+          companyCount[orgId] = 0;
+        }
+        
+        if (companyCount[orgId] < peoplePerCompany) {
+          limitedPeople.push(person);
+          companyCount[orgId]++;
+        }
+      }
+      
+      console.log(`After limiting to ${peoplePerCompany} per company: ${limitedPeople.length} people`);
+      
+      setSearchResults(limitedPeople);
     } catch (error) {
       console.error('Error searching for people:', error);
       alert(`Failed to search for people: ${error.message}`);
@@ -396,8 +424,8 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
                 <input
                   type="text"
                   placeholder="e.g., CEO, VP of Sales, Marketing Director"
-                  value={searchParams.personTitles.join(', ')}
-                  onChange={(e) => {
+                  defaultValue={searchParams.personTitles.join(', ')}
+                  onBlur={(e) => {
                     const value = e.target.value;
                     if (value === '') {
                       handleInputChange('personTitles', []);
@@ -405,8 +433,18 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
                       handleInputChange('personTitles', value.split(',').map(s => s.trim()).filter(s => s));
                     }
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const value = e.target.value;
+                      if (value === '') {
+                        handleInputChange('personTitles', []);
+                      } else {
+                        handleInputChange('personTitles', value.split(',').map(s => s.trim()).filter(s => s));
+                      }
+                    }
+                  }}
                 />
-                <small>Separate multiple titles with commas</small>
+                <small>Separate multiple titles with commas (press Enter or click away to save)</small>
               </div>
             </div>
 
@@ -459,6 +497,24 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
               </small>
             </div>
 
+            <div className="form-section">
+              <h3>Results Limit</h3>
+              <div className="form-group">
+                <label>People per Company:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={searchParams.peoplePerCompany}
+                  onChange={(e) => handleInputChange('peoplePerCompany', parseInt(e.target.value) || 5)}
+                  style={{ width: '100px' }}
+                />
+                <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
+                  ℹ️ Limit the number of people to find per company (1-50)
+                </small>
+              </div>
+            </div>
+
             <div className="form-actions">
               <button
                 className="btn btn-primary"
@@ -474,12 +530,17 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
             <div className="search-results">
               <div className="results-header">
                 <h3>People Found ({searchResults.length})</h3>
-                <button 
-                  className="btn btn-success"
-                  onClick={handleSaveToPipedrive}
-                >
-                  💾 Save to Pipedrive & Create Leads
-                </button>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <small style={{ color: '#666' }}>
+                    Limited to {searchParams.peoplePerCompany} per company
+                  </small>
+                  <button
+                    className="btn btn-success"
+                    onClick={handleSaveToPipedrive}
+                  >
+                    💾 Save to Pipedrive & Create Leads
+                  </button>
+                </div>
               </div>
 
               <div className="results-table">
