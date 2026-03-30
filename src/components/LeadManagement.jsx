@@ -1,50 +1,43 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './LeadManagement.css';
 
 function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }) {
-  const [leads, setLeads] = useState(workflowData.leads || []);
+  const [leads, setLeads] = useState([]);
   const [filter, setFilter] = useState('all');
-  const [isCreatingLeads, setIsCreatingLeads] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedLeads, setSelectedLeads] = useState([]);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const leadStatuses = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
+  const leadLabels = ['no_label', 'first_mail', 'second_mail', 'third_mail', 'last_mail', 'answered'];
+  const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 
-  const handleCreateLeads = async () => {
-    if (workflowData.people.length === 0) {
-      alert('No people found. Please go back and find people first.');
-      return;
+  // Fetch leads from Pipedrive on component mount
+  useEffect(() => {
+    fetchLeads();
+  }, []);
+
+  const fetchLeads = async () => {
+    setIsLoading(true);
+    try {
+      // TODO: Replace with actual Pipedrive API call
+      const response = await fetch('http://localhost:3001/api/leads');
+      if (response.ok) {
+        const data = await response.json();
+        setLeads(data.leads || []);
+        updateWorkflowData('leads', data.leads || []);
+      }
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      // If API fails, use workflow data as fallback
+      setLeads(workflowData.leads || []);
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsCreatingLeads(true);
-
-    // Simulate creating leads in Pipedrive
-    setTimeout(() => {
-      const newLeads = workflowData.people.map(person => ({
-        id: `lead-${person.id}`,
-        personId: person.id,
-        personName: `${person.firstName} ${person.lastName}`,
-        email: person.email,
-        phone: person.phone,
-        title: person.title,
-        organization: person.organization,
-        organizationId: person.organizationId,
-        status: 'new',
-        value: Math.floor(Math.random() * 50000) + 10000,
-        expectedCloseDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        notes: '',
-        createdAt: new Date().toISOString(),
-        lastContactedAt: null
-      }));
-
-      setLeads(newLeads);
-      updateWorkflowData('leads', newLeads);
-      setIsCreatingLeads(false);
-      alert(`${newLeads.length} leads created in Pipedrive!`);
-    }, 1500);
   };
 
-  const handleStatusChange = (leadId, newStatus) => {
+  const handleLabelChange = (leadId, newLabel) => {
     const updatedLeads = leads.map(lead =>
-      lead.id === leadId ? { ...lead, status: newStatus } : lead
+      lead.id === leadId ? { ...lead, label: newLabel } : lead
     );
     setLeads(updatedLeads);
     updateWorkflowData('leads', updatedLeads);
@@ -58,17 +51,73 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
     updateWorkflowData('leads', updatedLeads);
   };
 
-  const handleDeleteLead = (leadId) => {
-    if (confirm('Are you sure you want to delete this lead?')) {
-      const updatedLeads = leads.filter(lead => lead.id !== leadId);
-      setLeads(updatedLeads);
-      updateWorkflowData('leads', updatedLeads);
+  const handleDeleteLeads = async () => {
+    if (selectedLeads.length === 0) {
+      alert('Please select leads to delete');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedLeads.length} lead(s) from Pipedrive?`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    const errors = [];
+
+    try {
+      // Delete each selected lead from Pipedrive
+      for (const leadId of selectedLeads) {
+        try {
+          const response = await fetch(
+            `https://api.pipedrive.com/v1/leads/${leadId}?api_token=${PIPEDRIVE_API_KEY}`,
+            { method: 'DELETE' }
+          );
+
+          if (!response.ok) {
+            errors.push(`Lead ${leadId}: ${response.status}`);
+          }
+        } catch (error) {
+          errors.push(`Lead ${leadId}: ${error.message}`);
+        }
+      }
+
+      if (errors.length > 0) {
+        console.error('Errors deleting leads:', errors);
+        alert(`Some leads could not be deleted:\n${errors.join('\n')}`);
+      } else {
+        alert(`Successfully deleted ${selectedLeads.length} lead(s)`);
+      }
+
+      // Refresh the leads list
+      setSelectedLeads([]);
+      await fetchLeads();
+    } catch (error) {
+      console.error('Error deleting leads:', error);
+      alert(`Failed to delete leads: ${error.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const filteredLeads = filter === 'all' 
-    ? leads 
-    : leads.filter(lead => lead.status === filter);
+  const handleSelectLead = (leadId) => {
+    setSelectedLeads(prev =>
+      prev.includes(leadId)
+        ? prev.filter(id => id !== leadId)
+        : [...prev, leadId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedLeads.length === filteredLeads.length) {
+      setSelectedLeads([]);
+    } else {
+      setSelectedLeads(filteredLeads.map(lead => lead.id));
+    }
+  };
+
+  const filteredLeads = filter === 'all'
+    ? leads
+    : leads.filter(lead => (lead.label || 'no_label') === filter);
 
   const getStatusColor = (status) => {
     const colors = {
@@ -86,11 +135,11 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
   const getLeadStats = () => {
     return {
       total: leads.length,
-      new: leads.filter(l => l.status === 'new').length,
-      contacted: leads.filter(l => l.status === 'contacted').length,
-      qualified: leads.filter(l => l.status === 'qualified').length,
-      won: leads.filter(l => l.status === 'won').length,
-      totalValue: leads.reduce((sum, lead) => sum + lead.value, 0)
+      first_mail: leads.filter(l => l.label === 'first_mail').length,
+      second_mail: leads.filter(l => l.label === 'second_mail').length,
+      third_mail: leads.filter(l => l.label === 'third_mail').length,
+      last_mail: leads.filter(l => l.label === 'last_mail').length,
+      answered: leads.filter(l => l.label === 'answered').length
     };
   };
 
@@ -103,141 +152,102 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
         <p>Manage leads created in Pipedrive</p>
       </div>
 
-      {workflowData.people.length === 0 ? (
+      {isLoading ? (
         <div className="empty-state">
-          <p>⚠️ No people found. Please go back and find people first.</p>
-          <button className="btn btn-secondary" onClick={onPrevious}>
-            ← Back to People Finder
-          </button>
+          <p>⏳ Loading leads from Pipedrive...</p>
         </div>
       ) : (
         <>
           {leads.length === 0 ? (
-            <div className="create-leads-section">
-              <div className="info-box">
-                <h3>Ready to Create Leads</h3>
-                <p>You have {workflowData.people.length} people ready to be converted into leads in Pipedrive.</p>
-                <button 
-                  className="btn btn-primary btn-large"
-                  onClick={handleCreateLeads}
-                  disabled={isCreatingLeads}
-                >
-                  {isCreatingLeads ? '⏳ Creating Leads...' : '✨ Create Leads in Pipedrive'}
-                </button>
-              </div>
+            <div className="empty-state">
+              <p>📭 No leads found in Pipedrive.</p>
+              <button className="btn btn-primary" onClick={fetchLeads}>
+                🔄 Refresh
+              </button>
             </div>
           ) : (
             <>
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <div className="stat-value">{stats.total}</div>
-                  <div className="stat-label">Total Leads</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-value">{stats.new}</div>
-                  <div className="stat-label">New</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-value">{stats.contacted}</div>
-                  <div className="stat-label">Contacted</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-value">{stats.qualified}</div>
-                  <div className="stat-label">Qualified</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-value">{stats.won}</div>
-                  <div className="stat-label">Won</div>
-                </div>
-                <div className="stat-card highlight">
-                  <div className="stat-value">${(stats.totalValue / 1000).toFixed(0)}K</div>
-                  <div className="stat-label">Total Value</div>
-                </div>
-              </div>
-
               <div className="leads-controls">
                 <div className="filter-section">
-                  <label>Filter by Status:</label>
-                  <select 
-                    value={filter} 
+                  <label>Filter by Label:</label>
+                  <select
+                    value={filter}
                     onChange={(e) => setFilter(e.target.value)}
                     className="select-input"
                   >
                     <option value="all">All Leads ({leads.length})</option>
-                    {leadStatuses.map(status => (
-                      <option key={status} value={status}>
-                        {status.charAt(0).toUpperCase() + status.slice(1)} ({leads.filter(l => l.status === status).length})
+                    {leadLabels.map(label => (
+                      <option key={label} value={label}>
+                        {label.replace(/_/g, ' ').charAt(0).toUpperCase() + label.replace(/_/g, ' ').slice(1)} ({leads.filter(l => (l.label || 'no_label') === label).length})
                       </option>
                     ))}
                   </select>
                 </div>
-
-                <button 
-                  className="btn btn-success"
-                  onClick={onNext}
-                  disabled={leads.filter(l => l.status === 'new' || l.status === 'contacted').length === 0}
-                >
-                  📧 Continue to Email Campaign
-                </button>
+                <div className="bulk-actions">
+                  <button
+                    className="btn btn-danger"
+                    onClick={handleDeleteLeads}
+                    disabled={selectedLeads.length === 0 || isDeleting}
+                  >
+                    {isDeleting ? '⏳ Deleting...' : `🗑️ Delete Selected (${selectedLeads.length})`}
+                  </button>
+                </div>
               </div>
 
-              <div className="leads-list">
-                {filteredLeads.map(lead => (
-                  <div key={lead.id} className="lead-card">
-                    <div className="lead-header">
-                      <div className="lead-info">
-                        <h4>{lead.personName}</h4>
-                        <p className="lead-title">{lead.title} at {lead.organization}</p>
-                      </div>
-                      <div className="lead-value">${(lead.value / 1000).toFixed(1)}K</div>
-                    </div>
-
-                    <div className="lead-body">
-                      <div className="lead-details">
-                        <p><strong>📧 Email:</strong> <a href={`mailto:${lead.email}`}>{lead.email}</a></p>
-                        <p><strong>📞 Phone:</strong> {lead.phone}</p>
-                        <p><strong>📅 Expected Close:</strong> {lead.expectedCloseDate}</p>
-                        <p><strong>🕐 Created:</strong> {new Date(lead.createdAt).toLocaleDateString()}</p>
-                      </div>
-
-                      <div className="lead-status-section">
-                        <label>Status:</label>
-                        <select
-                          value={lead.status}
-                          onChange={(e) => handleStatusChange(lead.id, e.target.value)}
-                          className="status-select"
-                          style={{ borderColor: getStatusColor(lead.status) }}
-                        >
-                          {leadStatuses.map(status => (
-                            <option key={status} value={status}>
-                              {status.charAt(0).toUpperCase() + status.slice(1)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="lead-notes">
-                        <label>Notes:</label>
-                        <textarea
-                          value={lead.notes}
-                          onChange={(e) => handleNotesChange(lead.id, e.target.value)}
-                          placeholder="Add notes about this lead..."
-                          rows="2"
+              <div className="leads-table-container">
+                <table className="leads-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedLeads.length === filteredLeads.length && filteredLeads.length > 0}
+                          onChange={handleSelectAll}
+                          title="Select all"
                         />
-                      </div>
-                    </div>
-
-                    <div className="lead-actions">
-                      <button 
-                        className="btn-icon btn-danger"
-                        onClick={() => handleDeleteLead(lead.id)}
-                        title="Delete Lead"
-                      >
-                        🗑️ Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                      </th>
+                      <th>Title</th>
+                      <th>Organization</th>
+                      <th>Email</th>
+                      <th>Label</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLeads.map(lead => (
+                      <tr key={lead.id} className={selectedLeads.includes(lead.id) ? 'selected' : ''}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selectedLeads.includes(lead.id)}
+                            onChange={() => handleSelectLead(lead.id)}
+                          />
+                        </td>
+                        <td><strong>{lead.title || lead.personName || '-'}</strong></td>
+                        <td>{lead.organization || lead.organization_name || '-'}</td>
+                        <td>
+                          {lead.email ? (
+                            <a href={`mailto:${lead.email}`}>{lead.email}</a>
+                          ) : '-'}
+                        </td>
+                        <td>
+                          <select
+                            value={lead.label || 'no_label'}
+                            onChange={(e) => handleLabelChange(lead.id, e.target.value)}
+                            className="status-select-compact"
+                          >
+                            {leadLabels.map(label => (
+                              <option key={label} value={label}>
+                                {label.replace(/_/g, ' ')}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>{lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </>
           )}

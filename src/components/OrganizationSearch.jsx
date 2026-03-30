@@ -77,6 +77,13 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     init();
   }, []);
 
+  // Update workflowData when pipedriveOrganizations changes
+  useEffect(() => {
+    if (pipedriveOrganizations.length > 0) {
+      updateWorkflowData('organizations', pipedriveOrganizations);
+    }
+  }, [pipedriveOrganizations]);
+
   // Poll for new Apollo results every 5 seconds
   useEffect(() => {
     const pollInterval = setInterval(() => {
@@ -971,7 +978,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
                     <td>
                       {org.linkedin ? (
                         <a href={org.linkedin.startsWith('http') ? org.linkedin : `https://${org.linkedin}`} target="_blank" rel="noopener noreferrer">
-                          {org.linkedin}
+                          LinkedIn
                         </a>
                       ) : '-'}
                     </td>

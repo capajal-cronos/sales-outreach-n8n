@@ -45,9 +45,13 @@
 }
 
 .progress-step.completed {
-  background-color: var(--success-color);
-  color: white;
-  border-color: var(--success-color);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: transparent;
+}
+
+.progress-step.completed .step-number {
+  background-color: rgba(255, 255, 255, 0.2);
 }
 
 .progress-step.pending {
@@ -81,9 +85,6 @@
   animation: pulse 2s infinite;
 }
 
-.progress-step.completed .step-number {
-  background-color: rgba(255, 255, 255, 0.3);
-}
 
 @keyframes pulse {
   0%, 100% {

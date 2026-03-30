@@ -28,6 +28,13 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
     fetchPipedriveOrganizations();
   }, []);
 
+  // Update workflowData when pipedrivePersons changes
+  useEffect(() => {
+    if (pipedrivePersons.length > 0) {
+      updateWorkflowData('people', pipedrivePersons);
+    }
+  }, [pipedrivePersons]);
+
   const fetchPipedriveOrganizations = async () => {
     try {
       const response = await fetch(
@@ -243,11 +250,9 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
         }
 
         console.log(`Page ${page}: Received ${people.length} people`);
-        console.log('Parsed people array:', people);
 
         if (people.length === 0) {
           console.log('No more results, stopping pagination');
-          console.warn('⚠️ n8n returned 0 people. Check if your n8n workflow has a "Respond to Webhook" node that returns the people data.');
           break;
         }
 
@@ -525,71 +530,6 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
               </button>
             </div>
           </div>
-
-          {searchResults.length > 0 && (
-            <div className="search-results">
-              <div className="results-header">
-                <h3>People Found ({searchResults.length})</h3>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                  <small style={{ color: '#666' }}>
-                    Limited to {searchParams.peoplePerCompany} per company
-                  </small>
-                  <button
-                    className="btn btn-success"
-                    onClick={handleSaveToPipedrive}
-                  >
-                    💾 Save to Pipedrive & Create Leads
-                  </button>
-                </div>
-              </div>
-
-              <div className="results-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Title</th>
-                      <th>Department</th>
-                      <th>Organization</th>
-                      <th>Email</th>
-                      <th>Phone</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {searchResults.map(person => (
-                      <tr key={person.id}>
-                        <td>
-                          <div className="person-name">
-                            {person.firstName} {person.lastName}
-                            {person.linkedinUrl && (
-                              <a href={person.linkedinUrl} target="_blank" rel="noopener noreferrer" className="linkedin-link">
-                                🔗
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                        <td>{person.title}</td>
-                        <td>{person.department}</td>
-                        <td>{person.organization}</td>
-                        <td><a href={`mailto:${person.email}`}>{person.email}</a></td>
-                        <td>{person.phone}</td>
-                        <td>
-                          <button 
-                            className="btn-icon"
-                            onClick={() => handleRemovePerson(person.id)}
-                            title="Remove"
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
 
     </div>
   );

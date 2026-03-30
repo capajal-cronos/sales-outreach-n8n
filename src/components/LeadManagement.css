@@ -86,6 +86,13 @@
   background-color: var(--bg-secondary);
   border-radius: 8px;
   gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .filter-section {
@@ -99,22 +106,87 @@
   color: var(--text-primary);
 }
 
-.leads-list {
-  display: grid;
-  gap: 1.5rem;
-}
-
-.lead-card {
+.leads-table-container {
   background-color: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 1.5rem;
+  border-radius: 8px;
+  overflow-x: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.lead-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+.leads-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.leads-table thead {
+  background-color: var(--bg-primary);
+  border-bottom: 2px solid var(--border-color);
+}
+
+.leads-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.leads-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.leads-table tbody tr:hover {
+  background-color: var(--bg-primary);
+}
+
+.leads-table tbody tr.selected {
+  background-color: rgba(100, 108, 255, 0.1);
+}
+
+.leads-table tbody tr.selected:hover {
+  background-color: rgba(100, 108, 255, 0.15);
+}
+
+.leads-table input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.leads-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.leads-table a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.leads-table a:hover {
+  text-decoration: underline;
+}
+
+.status-select-compact {
+  padding: 0.4rem 0.6rem;
+  border: 2px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 100px;
+  text-align: left;
+}
+
+.status-select-compact:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.1);
 }
 
 .lead-header {

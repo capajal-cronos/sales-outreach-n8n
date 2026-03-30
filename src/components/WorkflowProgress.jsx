@@ -29,7 +29,7 @@ function WorkflowProgress({ steps, currentStep, onStepClick, workflowData }) {
   return (
     <div className="workflow-progress">
       <div className="progress-steps">
-        {steps.map((step, index) => (
+        {steps.map((step) => (
           <div key={step.id} className="progress-step-wrapper">
             <div
               className={`progress-step ${getStepStatus(step.id)} clickable`}
@@ -37,7 +37,7 @@ function WorkflowProgress({ steps, currentStep, onStepClick, workflowData }) {
               title={`Go to ${step.name}`}
             >
               <div className="step-number">
-                {getStepStatus(step.id) === 'completed' ? '✓' : step.id}
+                {step.id}
               </div>
               <div className="step-info">
                 <div className="step-name">{step.name}</div>
@@ -46,9 +46,6 @@ function WorkflowProgress({ steps, currentStep, onStepClick, workflowData }) {
                 </div>
               </div>
             </div>
-            {index < steps.length - 1 && (
-              <div className={`progress-connector ${getStepStatus(step.id) === 'completed' ? 'completed' : ''}`} />
-            )}
           </div>
         ))}
       </div>
