@@ -87,7 +87,35 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
-          setPipedrivePersons(data.data);
+          // Fetch detailed info for each person to get LinkedIn and other fields
+          const detailedPersons = await Promise.all(
+            data.data.map(async (person) => {
+              try {
+                const detailResponse = await fetch(
+                  `https://api.pipedrive.com/v1/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`
+                );
+                if (detailResponse.ok) {
+                  const detailData = await detailResponse.json();
+                  if (detailData.success && detailData.data) {
+                    const personData = detailData.data;
+                    
+                    // Log first person to see all available fields
+                    if (data.data.indexOf(person) === 0) {
+                      console.log('First person full data:', JSON.stringify(personData, null, 2));
+                      console.log('Person keys:', Object.keys(personData));
+                    }
+                    
+                    return personData;
+                  }
+                }
+              } catch (err) {
+                console.error(`Failed to fetch details for person ${person.id}:`, err);
+              }
+              return person;
+            })
+          );
+          
+          setPipedrivePersons(detailedPersons);
         }
       }
     } catch (err) {
@@ -152,6 +180,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
     }
 
     setIsLoading(true);
+    console.log('🚀 Starting people search workflow...');
 
     try {
       // Get Apollo IDs from selected organizations
@@ -291,9 +320,13 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
       console.log(`After limiting to ${peoplePerCompany} per company: ${limitedPeople.length} people`);
       
       setSearchResults(limitedPeople);
+      
+      // Success feedback
+      console.log('✅ People search workflow completed successfully!');
+      alert(`✅ Search complete! Found ${limitedPeople.length} people across ${apolloIds.length} companies.`);
     } catch (error) {
-      console.error('Error searching for people:', error);
-      alert(`Failed to search for people: ${error.message}`);
+      console.error('❌ Error searching for people:', error);
+      alert(`❌ Failed to search for people: ${error.message}`);
       setSearchResults([]);
     } finally {
       setIsLoading(false);
@@ -340,20 +373,68 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Headline</th>
                   <th>Email</th>
                   <th>Phone</th>
                   <th>Organization</th>
+                  <th>LinkedIn</th>
                 </tr>
               </thead>
               <tbody>
-                {pipedrivePersons.map(person => (
-                  <tr key={person.id}>
-                    <td><strong>{person.name}</strong></td>
-                    <td>{person.email && person.email[0] ? person.email[0].value : '-'}</td>
-                    <td>{person.phone && person.phone[0] ? person.phone[0].value : '-'}</td>
-                    <td>{person.org_id?.name || '-'}</td>
-                  </tr>
-                ))}
+                {pipedrivePersons.map(person => {
+                  // Try to find LinkedIn URL in all possible fields including custom fields
+                  let linkedinUrl = null;
+                  
+                  // Check standard fields
+                  if (person.linkedin_url) linkedinUrl = person.linkedin_url;
+                  else if (person.linkedin) linkedinUrl = person.linkedin;
+                  
+                  // Check all custom fields (hash keys) for linkedin
+                  if (!linkedinUrl) {
+                    for (const key in person) {
+                      if (key.includes('linkedin') || key.includes('LinkedIn')) {
+                        linkedinUrl = person[key];
+                        break;
+                      }
+                    }
+                  }
+                  
+                  // Get headline (job title/position) from all possible fields
+                  let headline = null;
+                  
+                  // Check standard fields
+                  if (person.headline) headline = person.headline;
+                  else if (person.title) headline = person.title;
+                  else if (person.job_title) headline = person.job_title;
+                  
+                  // Check all custom fields for headline/title
+                  if (!headline) {
+                    for (const key in person) {
+                      if (key.includes('headline') || key.includes('Headline') ||
+                          (key.includes('title') && !key.includes('owner'))) {
+                        headline = person[key];
+                        break;
+                      }
+                    }
+                  }
+                  
+                  return (
+                    <tr key={person.id}>
+                      <td><strong>{person.name}</strong></td>
+                      <td style={{ fontSize: '0.9em', color: '#666' }}>{headline || '-'}</td>
+                      <td>{person.email && person.email[0] ? person.email[0].value : '-'}</td>
+                      <td>{person.phone && person.phone[0] ? person.phone[0].value : '-'}</td>
+                      <td>{person.org_id?.name || '-'}</td>
+                      <td>
+                        {linkedinUrl ? (
+                          <a href={linkedinUrl.startsWith('http') ? linkedinUrl : `https://${linkedinUrl}`} target="_blank" rel="noopener noreferrer">
+                            LinkedIn
+                          </a>
+                        ) : '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -511,7 +592,17 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
                   min="1"
                   max="50"
                   value={searchParams.peoplePerCompany}
-                  onChange={(e) => handleInputChange('peoplePerCompany', parseInt(e.target.value) || 5)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Allow empty string for clearing, otherwise parse as number
+                    handleInputChange('peoplePerCompany', val === '' ? '' : Math.max(1, Math.min(50, parseInt(val) || 1)));
+                  }}
+                  onBlur={(e) => {
+                    // On blur, if empty, set to default 5
+                    if (e.target.value === '') {
+                      handleInputChange('peoplePerCompany', 5);
+                    }
+                  }}
                   style={{ width: '100px' }}
                 />
                 <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>

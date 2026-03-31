@@ -7,24 +7,109 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
   const [isLoading, setIsLoading] = useState(true);
   const [selectedLeads, setSelectedLeads] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [labelMapping, setLabelMapping] = useState({});
 
-  const leadLabels = ['no_label', 'first_mail', 'second_mail', 'third_mail', 'last_mail', 'answered'];
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 
-  // Fetch leads from Pipedrive on component mount
+  // Fetch label mappings and leads from Pipedrive on component mount
   useEffect(() => {
+    fetchLabelMapping();
     fetchLeads();
   }, []);
+
+  const fetchLabelMapping = async () => {
+    try {
+      const response = await fetch(
+        `https://api.pipedrive.com/v1/leadLabels?api_token=${PIPEDRIVE_API_KEY}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          // Create a mapping of label ID to label name
+          const mapping = {};
+          data.data.forEach(label => {
+            mapping[label.id] = label.name;
+          });
+          setLabelMapping(mapping);
+          console.log('Label mapping loaded:', mapping);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching label mapping:', error);
+    }
+  };
 
   const fetchLeads = async () => {
     setIsLoading(true);
     try {
-      // TODO: Replace with actual Pipedrive API call
-      const response = await fetch('http://localhost:3001/api/leads');
+      // Fetch leads directly from Pipedrive API
+      const response = await fetch(
+        `https://api.pipedrive.com/v1/leads?api_token=${PIPEDRIVE_API_KEY}&limit=500`
+      );
+      
       if (response.ok) {
         const data = await response.json();
-        setLeads(data.leads || []);
-        updateWorkflowData('leads', data.leads || []);
+        if (data.success && data.data) {
+          // Fetch detailed info for each lead including organization and person data
+          const detailedLeads = await Promise.all(
+            data.data.map(async (lead) => {
+              try {
+                const detailResponse = await fetch(
+                  `https://api.pipedrive.com/v1/leads/${lead.id}?api_token=${PIPEDRIVE_API_KEY}`
+                );
+                if (detailResponse.ok) {
+                  const detailData = await detailResponse.json();
+                  if (detailData.success && detailData.data) {
+                    const leadData = detailData.data;
+                    
+                    // Fetch organization name if we have an organization_id
+                    if (leadData.organization_id && typeof leadData.organization_id === 'number') {
+                      try {
+                        const orgResponse = await fetch(
+                          `https://api.pipedrive.com/v1/organizations/${leadData.organization_id}?api_token=${PIPEDRIVE_API_KEY}`
+                        );
+                        if (orgResponse.ok) {
+                          const orgData = await orgResponse.json();
+                          if (orgData.success && orgData.data) {
+                            leadData.organization_name = orgData.data.name;
+                          }
+                        }
+                      } catch (err) {
+                        console.error(`Failed to fetch org ${leadData.organization_id}:`, err);
+                      }
+                    }
+                    
+                    // Fetch person email if we have a person_id
+                    if (leadData.person_id && typeof leadData.person_id === 'number') {
+                      try {
+                        const personResponse = await fetch(
+                          `https://api.pipedrive.com/v1/persons/${leadData.person_id}?api_token=${PIPEDRIVE_API_KEY}`
+                        );
+                        if (personResponse.ok) {
+                          const personData = await personResponse.json();
+                          if (personData.success && personData.data) {
+                            leadData.person_email = personData.data.email?.[0]?.value || personData.data.email;
+                          }
+                        }
+                      } catch (err) {
+                        console.error(`Failed to fetch person ${leadData.person_id}:`, err);
+                      }
+                    }
+                    
+                    return leadData;
+                  }
+                }
+              } catch (err) {
+                console.error(`Failed to fetch details for lead ${lead.id}:`, err);
+              }
+              return lead;
+            })
+          );
+          
+          setLeads(detailedLeads);
+          updateWorkflowData('leads', detailedLeads);
+        }
       }
     } catch (error) {
       console.error('Error fetching leads:', error);
@@ -35,20 +120,37 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
     }
   };
 
-  const handleLabelChange = (leadId, newLabel) => {
-    const updatedLeads = leads.map(lead =>
-      lead.id === leadId ? { ...lead, label: newLabel } : lead
-    );
-    setLeads(updatedLeads);
-    updateWorkflowData('leads', updatedLeads);
-  };
+  const handleLabelChange = async (leadId, newLabelId) => {
+    try {
+      // Update label in Pipedrive
+      const response = await fetch(
+        `https://api.pipedrive.com/v1/leads/${leadId}?api_token=${PIPEDRIVE_API_KEY}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            label_ids: [newLabelId]
+          })
+        }
+      );
 
-  const handleNotesChange = (leadId, notes) => {
-    const updatedLeads = leads.map(lead =>
-      lead.id === leadId ? { ...lead, notes } : lead
-    );
-    setLeads(updatedLeads);
-    updateWorkflowData('leads', updatedLeads);
+      if (response.ok) {
+        // Update local state
+        const updatedLeads = leads.map(lead =>
+          lead.id === leadId ? { ...lead, label_ids: [newLabelId] } : lead
+        );
+        setLeads(updatedLeads);
+        updateWorkflowData('leads', updatedLeads);
+      } else {
+        console.error('Failed to update label in Pipedrive');
+        alert('Failed to update label');
+      }
+    } catch (error) {
+      console.error('Error updating label:', error);
+      alert(`Failed to update label: ${error.message}`);
+    }
   };
 
   const handleDeleteLeads = async () => {
@@ -117,33 +219,10 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
 
   const filteredLeads = filter === 'all'
     ? leads
-    : leads.filter(lead => (lead.label || 'no_label') === filter);
-
-  const getStatusColor = (status) => {
-    const colors = {
-      new: '#3b82f6',
-      contacted: '#8b5cf6',
-      qualified: '#06b6d4',
-      proposal: '#f59e0b',
-      negotiation: '#f97316',
-      won: '#10b981',
-      lost: '#ef4444'
-    };
-    return colors[status] || '#6b7280';
-  };
-
-  const getLeadStats = () => {
-    return {
-      total: leads.length,
-      first_mail: leads.filter(l => l.label === 'first_mail').length,
-      second_mail: leads.filter(l => l.label === 'second_mail').length,
-      third_mail: leads.filter(l => l.label === 'third_mail').length,
-      last_mail: leads.filter(l => l.label === 'last_mail').length,
-      answered: leads.filter(l => l.label === 'answered').length
-    };
-  };
-
-  const stats = getLeadStats();
+    : leads.filter(lead => {
+        const leadLabelIds = lead.label_ids || [];
+        return leadLabelIds.includes(filter);
+      });
 
   return (
     <div className="lead-management">
@@ -176,11 +255,14 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
                     className="select-input"
                   >
                     <option value="all">All Leads ({leads.length})</option>
-                    {leadLabels.map(label => (
-                      <option key={label} value={label}>
-                        {label.replace(/_/g, ' ').charAt(0).toUpperCase() + label.replace(/_/g, ' ').slice(1)} ({leads.filter(l => (l.label || 'no_label') === label).length})
-                      </option>
-                    ))}
+                    {Object.entries(labelMapping).map(([labelId, labelName]) => {
+                      const count = leads.filter(l => l.label_ids && l.label_ids.includes(labelId)).length;
+                      return (
+                        <option key={labelId} value={labelId}>
+                          {labelName} ({count})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div className="bulk-actions">
@@ -214,38 +296,48 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredLeads.map(lead => (
-                      <tr key={lead.id} className={selectedLeads.includes(lead.id) ? 'selected' : ''}>
-                        <td>
-                          <input
-                            type="checkbox"
-                            checked={selectedLeads.includes(lead.id)}
-                            onChange={() => handleSelectLead(lead.id)}
-                          />
-                        </td>
-                        <td><strong>{lead.title || lead.personName || '-'}</strong></td>
-                        <td>{lead.organization || lead.organization_name || '-'}</td>
-                        <td>
-                          {lead.email ? (
-                            <a href={`mailto:${lead.email}`}>{lead.email}</a>
-                          ) : '-'}
-                        </td>
-                        <td>
-                          <select
-                            value={lead.label || 'no_label'}
-                            onChange={(e) => handleLabelChange(lead.id, e.target.value)}
-                            className="status-select-compact"
-                          >
-                            {leadLabels.map(label => (
-                              <option key={label} value={label}>
-                                {label.replace(/_/g, ' ')}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>{lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}</td>
-                      </tr>
-                    ))}
+                    {filteredLeads.map(lead => {
+                      // Get label names from label_ids
+                      const labelNames = lead.label_ids && lead.label_ids.length > 0
+                        ? lead.label_ids.map(id => labelMapping[id] || id).join(', ')
+                        : 'No Label';
+                      
+                      // Use the fetched organization name
+                      const orgName = lead.organization_name || lead.organization?.name || '-';
+                      
+                      // Use the fetched person email
+                      const email = lead.person_email || lead.email || '-';
+                      
+                      return (
+                        <tr key={lead.id} className={selectedLeads.includes(lead.id) ? 'selected' : ''}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selectedLeads.includes(lead.id)}
+                              onChange={() => handleSelectLead(lead.id)}
+                            />
+                          </td>
+                          <td><strong>{lead.title || '-'}</strong></td>
+                          <td>{orgName}</td>
+                          <td>
+                            {email !== '-' ? (
+                              <a href={`mailto:${email}`}>{email}</a>
+                            ) : '-'}
+                          </td>
+                          <td>
+                            <span style={{
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '4px',
+                              backgroundColor: labelNames !== 'No Label' ? '#e0e7ff' : 'transparent',
+                              fontSize: '0.875rem'
+                            }}>
+                              {labelNames}
+                            </span>
+                          </td>
+                          <td>{lead.add_time ? new Date(lead.add_time).toLocaleDateString() : '-'}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

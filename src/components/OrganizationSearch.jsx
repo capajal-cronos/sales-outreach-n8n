@@ -19,8 +19,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     organizationIndustryTagIds: [],
     personTitles: [],
     revenueRange: [],
-    perPage: 25,  // Increased default to 25 per page
-    maxPages: 4   // Fetch up to 4 pages (100 total results)
+    perPage: 5,  
+    maxPages: 4
   });
 
   // Helper function to clean domain URLs
@@ -170,7 +170,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     try {
       const dbOrgs = await getAllOrganizations();
       let syncedCount = 0;
+      let deletedCount = 0;
       
+      // Step 1: Add new organizations from Pipedrive
       for (const pipedriveOrg of pipedriveOrgs) {
         // Extract domain from website URL or address
         let domain = '';
@@ -205,9 +207,34 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         }
       }
       
-      if (syncedCount > 0) {
-        console.log(`Synced ${syncedCount} new organizations from Pipedrive to database`);
-        await loadDbOrganizations(); // Reload database to show new orgs
+      // Step 2: Remove organizations from database that no longer exist in Pipedrive
+      // Only remove organizations that were originally from Pipedrive (processed: 'pipedrive')
+      const pipedriveOrgNames = new Set(pipedriveOrgs.map(org => org.name));
+      const pipedriveOrgDomains = new Set(
+        pipedriveOrgs
+          .map(org => org.website || org.address)
+          .filter(d => d)
+      );
+      
+      for (const dbOrg of dbOrgs) {
+        // Only check organizations that came from Pipedrive
+        if (dbOrg.processed === 'pipedrive') {
+          const existsInPipedrive =
+            pipedriveOrgNames.has(dbOrg.name) ||
+            (dbOrg.domain && pipedriveOrgDomains.has(dbOrg.domain));
+          
+          if (!existsInPipedrive) {
+            // Organization was deleted from Pipedrive, remove from database
+            await deleteOrganization(dbOrg.id);
+            deletedCount++;
+            console.log(`Removed organization "${dbOrg.name}" (deleted from Pipedrive)`);
+          }
+        }
+      }
+      
+      if (syncedCount > 0 || deletedCount > 0) {
+        console.log(`Sync complete: ${syncedCount} added, ${deletedCount} removed`);
+        await loadDbOrganizations(); // Reload database to show changes
       }
     } catch (err) {
       console.error('Failed to sync Pipedrive organizations to database:', err);
