@@ -128,14 +128,22 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   // Fetch organizations from Pipedrive and sync to database
   const fetchPipedriveOrganizations = async () => {
     try {
+      console.log('Fetching organizations from Pipedrive...');
+      
       // Fetch organizations with all fields
       const response = await fetch(
         `https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`
       );
       
+      console.log('Pipedrive response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('Pipedrive organizations data:', data);
+        
         if (data.success && data.data) {
+          console.log(`Found ${data.data.length} organizations in Pipedrive`);
+          
           // Fetch detailed info for each organization to get website
           const detailedOrgs = await Promise.all(
             data.data.map(async (org) => {
@@ -154,11 +162,16 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
             })
           );
           
+          console.log('Setting Pipedrive organizations:', detailedOrgs.length);
           setPipedriveOrganizations(detailedOrgs);
           
           // Sync Pipedrive organizations to database
           await syncPipedriveToDatabase(detailedOrgs);
+        } else {
+          console.log('No organizations data in response');
         }
+      } else {
+        console.error('Pipedrive API error:', response.status, await response.text());
       }
     } catch (err) {
       console.error('Failed to fetch Pipedrive organizations:', err);

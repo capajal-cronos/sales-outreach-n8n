@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './EmailCampaign.css';
 
 function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious }) {
   const [isSending, setIsSending] = useState(false);
   const [lastRunResult, setLastRunResult] = useState(null);
   const [leadsCount, setLeadsCount] = useState(0);
+  const [streamingEmails, setStreamingEmails] = useState([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const eventSourceRef = useRef(null);
   
   // n8n webhook URL
   const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook-test/send-leads-mails';
@@ -12,6 +15,13 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
   // Fetch leads count on mount
   useEffect(() => {
     fetchLeadsCount();
+    
+    // Cleanup SSE connection on unmount
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
   }, []);
 
   const fetchLeadsCount = async () => {
@@ -26,12 +36,60 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
     }
   };
 
+  const startEmailStream = () => {
+    // Close existing connection if any
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    // Clear previous emails
+    setStreamingEmails([]);
+    setIsStreaming(true);
+
+    // Create new SSE connection
+    const eventSource = new EventSource('http://localhost:3001/api/emails/stream');
+    eventSourceRef.current = eventSource;
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'connected') {
+          console.log('Connected to email stream');
+        } else if (data.type === 'email') {
+          console.log('Received email:', data.data);
+          setStreamingEmails(prev => [...prev, data.data]);
+        } else if (data.type === 'complete') {
+          console.log('Campaign complete');
+          setIsStreaming(false);
+          setLastRunResult({
+            success: true,
+            message: `Campaign completed! ${streamingEmails.length} emails processed.`,
+            timestamp: new Date().toISOString()
+          });
+          eventSource.close();
+        }
+      } catch (error) {
+        console.error('Error parsing SSE message:', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('SSE error:', error);
+      setIsStreaming(false);
+      eventSource.close();
+    };
+  };
+
   const handleTriggerCampaign = async () => {
     setIsSending(true);
     setLastRunResult(null);
 
     try {
       console.log('Fetching leads from Pipedrive...');
+      
+      // Start listening to email stream
+      startEmailStream();
       
       // First, fetch all leads from our API
       const leadsResponse = await fetch('http://localhost:3001/api/leads');
@@ -63,7 +121,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
         console.log('n8n workflow triggered successfully:', data);
         setLastRunResult({
           success: true,
-          message: `Email campaign workflow started successfully! Processing ${leads.length} leads.`,
+          message: `Email campaign workflow started! Streaming ${leads.length} emails...`,
           timestamp: new Date().toISOString()
         });
       } else {
@@ -76,6 +134,10 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
         message: `Failed to trigger workflow: ${error.message}`,
         timestamp: new Date().toISOString()
       });
+      setIsStreaming(false);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
     } finally {
       setIsSending(false);
     }
@@ -140,14 +202,49 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
           </div>
         )}
 
+        {/* Streaming emails display */}
+        {isStreaming && (
+          <div className="streaming-container">
+            <h3>📨 Incoming Emails ({streamingEmails.length})</h3>
+            <div className="streaming-status">
+              <span className="streaming-indicator">🔴 Live</span>
+              <span>Receiving emails in real-time...</span>
+            </div>
+          </div>
+        )}
+
+        {streamingEmails.length > 0 && (
+          <div className="emails-list">
+            {streamingEmails.map((email, index) => (
+              <div key={index} className="email-card">
+                <div className="email-header">
+                  <span className="email-number">#{index + 1}</span>
+                  <span className="email-stage">{email.email_stage}</span>
+                  <span className="email-time">
+                    {new Date(email.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+                <div className="email-details">
+                  <p><strong>To:</strong> {email.first_name} ({email.email})</p>
+                  <p><strong>Subject:</strong> {email.subject}</p>
+                  <div className="email-body">
+                    <strong>Body:</strong>
+                    <pre>{email.body}</pre>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="workflow-notes">
           <h4>📝 Notes:</h4>
           <ul>
-            <li>The workflow will process leads in batches</li>
-            <li>You'll receive approval emails for each generated message</li>
-            <li>Only approved emails will be sent</li>
+            <li>Emails will stream to the frontend in real-time as they're generated</li>
+            <li>You can see each email as it's being processed</li>
+            <li>The workflow processes leads individually</li>
             <li>Lead labels will be automatically updated after sending</li>
-            <li>Check your email for approval requests</li>
+            <li>No need to wait for all emails to be generated</li>
           </ul>
         </div>
       </div>

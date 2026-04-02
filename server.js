@@ -22,6 +22,9 @@ const PORT = process.env.PORT || 3001;
 // Initialize Apollo pending database on startup
 await initializeApolloPending();
 
+// Store for SSE clients
+const emailStreamClients = new Set();
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -165,6 +168,88 @@ app.get('/api/leads', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching leads from Pipedrive:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// SSE endpoint for streaming emails to frontend
+app.get('/api/emails/stream', (req, res) => {
+  // Set headers for SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  // Send initial connection message
+  res.write('data: {"type":"connected"}\n\n');
+
+  // Add client to set
+  emailStreamClients.add(res);
+
+  // Remove client on disconnect
+  req.on('close', () => {
+    emailStreamClients.delete(res);
+  });
+});
+
+// Endpoint for n8n to send individual emails
+app.post('/api/emails/stream-email', (req, res) => {
+  try {
+    const emailData = req.body;
+    
+    // Validate email data
+    if (!emailData || !emailData.email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email data'
+      });
+    }
+
+    // Broadcast to all connected SSE clients
+    const message = `data: ${JSON.stringify({
+      type: 'email',
+      data: emailData
+    })}\n\n`;
+
+    emailStreamClients.forEach(client => {
+      client.write(message);
+    });
+
+    res.json({
+      success: true,
+      message: 'Email streamed to frontend',
+      clientCount: emailStreamClients.size
+    });
+  } catch (error) {
+    console.error('Error streaming email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Endpoint to signal campaign completion
+app.post('/api/emails/stream-complete', (req, res) => {
+  try {
+    const message = `data: ${JSON.stringify({
+      type: 'complete',
+      data: req.body
+    })}\n\n`;
+
+    emailStreamClients.forEach(client => {
+      client.write(message);
+    });
+
+    res.json({
+      success: true,
+      message: 'Completion signal sent'
+    });
+  } catch (error) {
+    console.error('Error sending completion signal:', error);
     res.status(500).json({
       success: false,
       error: error.message

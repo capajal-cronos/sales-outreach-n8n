@@ -18,6 +18,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
   const [searchResults, setSearchResults] = useState(workflowData.people || []);
   const [pipedrivePersons, setPipedrivePersons] = useState([]);
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState([]);
+  const [headlineModal, setHeadlineModal] = useState({ show: false, headline: '', name: '' });
 
   // Get Pipedrive API key from environment
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
@@ -87,26 +88,54 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
-          // Fetch detailed info for each person to get LinkedIn and other fields
+          console.log(`Fetching details for ${data.data.length} persons...`);
+          
+          // Fetch detailed info for each person using v2 API to get headline and LinkedIn
           const detailedPersons = await Promise.all(
-            data.data.map(async (person) => {
+            data.data.map(async (person, index) => {
               try {
+                // Use v2 API endpoint for better data
                 const detailResponse = await fetch(
-                  `https://api.pipedrive.com/v1/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`
+                  `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`
                 );
+                
+                console.log(`Person ${index + 1} - Response status:`, detailResponse.status);
+                
                 if (detailResponse.ok) {
                   const detailData = await detailResponse.json();
+                  
+                  // Log first person's full v2 response to see structure
+                  if (index === 0) {
+                    console.log('First person v2 API response:', JSON.stringify(detailData, null, 2));
+                  }
+                  
                   if (detailData.success && detailData.data) {
                     const personData = detailData.data;
                     
-                    // Log first person to see all available fields
-                    if (data.data.indexOf(person) === 0) {
-                      console.log('First person full data:', JSON.stringify(personData, null, 2));
-                      console.log('Person keys:', Object.keys(personData));
+                    // Extract headline and LinkedIn from custom_fields using specific keys
+                    let headline = '';
+                    let linkedinUrl = '';
+                    
+                    if (personData.custom_fields) {
+                      // LinkedIn is in field: 7b02e9595a92744d8da04aaf22be9bbb17cb4a67
+                      linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
+                      
+                      // Headline is in field: 86c0c96c777b219fb2989b0121c709d30882d384
+                      headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
                     }
                     
-                    return personData;
+                    console.log(`Person ${person.name}: headline="${headline}", linkedin="${linkedinUrl}"`);
+                    
+                    // Return combined data with extracted fields, keeping org_id from v1 API
+                    return {
+                      ...person,
+                      headline: headline,
+                      linkedin_url: linkedinUrl
+                    };
                   }
+                } else {
+                  const errorText = await detailResponse.text();
+                  console.error(`Failed to fetch person ${person.id}:`, detailResponse.status, errorText);
                 }
               } catch (err) {
                 console.error(`Failed to fetch details for person ${person.id}:`, err);
@@ -115,6 +144,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
             })
           );
           
+          console.log('Finished fetching all person details');
           setPipedrivePersons(detailedPersons);
         }
       }
@@ -382,46 +412,28 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
               </thead>
               <tbody>
                 {pipedrivePersons.map(person => {
-                  // Try to find LinkedIn URL in all possible fields including custom fields
-                  let linkedinUrl = null;
-                  
-                  // Check standard fields
-                  if (person.linkedin_url) linkedinUrl = person.linkedin_url;
-                  else if (person.linkedin) linkedinUrl = person.linkedin;
-                  
-                  // Check all custom fields (hash keys) for linkedin
-                  if (!linkedinUrl) {
-                    for (const key in person) {
-                      if (key.includes('linkedin') || key.includes('LinkedIn')) {
-                        linkedinUrl = person[key];
-                        break;
-                      }
-                    }
-                  }
-                  
-                  // Get headline (job title/position) from all possible fields
-                  let headline = null;
-                  
-                  // Check standard fields
-                  if (person.headline) headline = person.headline;
-                  else if (person.title) headline = person.title;
-                  else if (person.job_title) headline = person.job_title;
-                  
-                  // Check all custom fields for headline/title
-                  if (!headline) {
-                    for (const key in person) {
-                      if (key.includes('headline') || key.includes('Headline') ||
-                          (key.includes('title') && !key.includes('owner'))) {
-                        headline = person[key];
-                        break;
-                      }
-                    }
-                  }
+                  const headline = person.headline || '';
+                  const linkedinUrl = person.linkedin_url || '';
+                  const truncatedHeadline = headline.length > 50 ? headline.substring(0, 50) + '...' : headline;
                   
                   return (
                     <tr key={person.id}>
                       <td><strong>{person.name}</strong></td>
-                      <td style={{ fontSize: '0.9em', color: '#666' }}>{headline || '-'}</td>
+                      <td style={{ fontSize: '0.9em', color: '#666' }}>
+                        {headline ? (
+                          headline.length > 50 ? (
+                            <span
+                              style={{ cursor: 'pointer', color: 'var(--primary-color)' }}
+                              onClick={() => setHeadlineModal({ show: true, headline, name: person.name })}
+                              title="Click to read full headline"
+                            >
+                              {truncatedHeadline}
+                            </span>
+                          ) : (
+                            headline
+                          )
+                        ) : '-'}
+                      </td>
                       <td>{person.email && person.email[0] ? person.email[0].value : '-'}</td>
                       <td>{person.phone && person.phone[0] ? person.phone[0].value : '-'}</td>
                       <td>{person.org_id?.name || '-'}</td>
@@ -622,6 +634,23 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
             </div>
           </div>
 
+      {/* Headline Modal */}
+      {headlineModal.show && (
+        <div className="modal-overlay" onClick={() => setHeadlineModal({ show: false, headline: '', name: '' })}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>📋 Full Headline</h3>
+              <button className="modal-close" onClick={() => setHeadlineModal({ show: false, headline: '', name: '' })}>
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: '1rem', fontWeight: '600' }}>{headlineModal.name}</p>
+              <p style={{ lineHeight: '1.6', color: 'var(--text-secondary)' }}>{headlineModal.headline}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
