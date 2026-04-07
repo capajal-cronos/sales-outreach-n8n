@@ -14,16 +14,21 @@ import {
   handleApolloDecisions,
   handleClearApolloPending
 } from './src/api/organizationEndpoint.js';
-import { initializeApolloPending } from './src/api/serverDatabase.js';
+import {
+  initializeApolloPending,
+  addEmailToQueue,
+  getPendingEmails,
+  getAllEmails,
+  updateEmailStatus,
+  deleteEmailFromQueue,
+  clearEmailsByStatus
+} from './src/api/serverDatabase.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Initialize Apollo pending database on startup
 await initializeApolloPending();
-
-// Store for SSE clients
-const emailStreamClients = new Set();
 
 // Middleware
 app.use(cors());
@@ -103,7 +108,17 @@ app.get('/api/leads', async (req, res) => {
       });
     }
 
-    // Fetch leads from Pipedrive API with organization details
+    // Fetch label mappings first
+    const labelsResponse = await fetch(`https://api.pipedrive.com/v1/leadLabels?api_token=${PIPEDRIVE_API_KEY}`);
+    const labelsData = await labelsResponse.json();
+    const labelMapping = {};
+    if (labelsData.success && labelsData.data) {
+      labelsData.data.forEach(label => {
+        labelMapping[label.id] = label.name.toLowerCase();
+      });
+    }
+
+    // Fetch leads from Pipedrive API
     const response = await fetch(`https://api.pipedrive.com/v1/leads?api_token=${PIPEDRIVE_API_KEY}`);
     
     if (!response.ok) {
@@ -112,8 +127,8 @@ app.get('/api/leads', async (req, res) => {
 
     const data = await response.json();
     
-    // Transform Pipedrive leads to our format
-    const leads = await Promise.all((data.data || []).map(async (lead) => {
+    // Transform and filter Pipedrive leads
+    const allLeads = await Promise.all((data.data || []).map(async (lead) => {
       let organizationName = lead.organization_name || '';
       let personEmail = '';
       
@@ -143,6 +158,10 @@ app.get('/api/leads', async (req, res) => {
         }
       }
       
+      // Get label name
+      const labelId = lead.label_ids?.[0];
+      const labelName = labelId ? labelMapping[labelId] : 'no_label';
+      
       return {
         id: lead.id,
         title: lead.title,
@@ -152,7 +171,8 @@ app.get('/api/leads', async (req, res) => {
         organization: organizationName,
         value: lead.value?.amount || 0,
         currency: lead.value?.currency || 'USD',
-        label: lead.label_ids?.[0] || 'no_label',
+        label: labelName,
+        label_ids: lead.label_ids || [],
         email: personEmail || lead.person?.email?.[0]?.value || '',
         phone: lead.person?.phone?.[0]?.value || '',
         createdAt: lead.add_time,
@@ -161,10 +181,19 @@ app.get('/api/leads', async (req, res) => {
       };
     }));
 
+    // Filter out leads with "answered" or "last_mail" labels
+    const filteredLeads = allLeads.filter(lead => {
+      const label = lead.label.toLowerCase();
+      return label !== 'answered' && label !== 'last_mail' && label !== 'last mail';
+    });
+
+    console.log(`Total leads: ${allLeads.length}, Filtered leads (excluding answered/last_mail): ${filteredLeads.length}`);
+
     res.json({
       success: true,
-      leads,
-      count: leads.length
+      leads: filteredLeads,
+      count: filteredLeads.length,
+      totalCount: allLeads.length
     });
   } catch (error) {
     console.error('Error fetching leads from Pipedrive:', error);
@@ -175,56 +204,34 @@ app.get('/api/leads', async (req, res) => {
   }
 });
 
-// SSE endpoint for streaming emails to frontend
-app.get('/api/emails/stream', (req, res) => {
-  // Set headers for SSE
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// ============================================
+// EMAIL QUEUE ENDPOINTS
+// ============================================
 
-  // Send initial connection message
-  res.write('data: {"type":"connected"}\n\n');
-
-  // Add client to set
-  emailStreamClients.add(res);
-
-  // Remove client on disconnect
-  req.on('close', () => {
-    emailStreamClients.delete(res);
-  });
-});
-
-// Endpoint for n8n to send individual emails
-app.post('/api/emails/stream-email', (req, res) => {
+// Endpoint for n8n to add emails to queue
+app.post('/api/email-queue', async (req, res) => {
   try {
-    const emailData = req.body;
+    const emails = Array.isArray(req.body) ? req.body : [req.body];
     
-    // Validate email data
-    if (!emailData || !emailData.email) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid email data'
-      });
+    const addedEmails = [];
+    for (const emailData of emails) {
+      // Validate required fields
+      if (!emailData.lead_id || !emailData.email || !emailData.subject || !emailData.body) {
+        console.error('Invalid email data:', emailData);
+        continue;
+      }
+      
+      const newEmail = await addEmailToQueue(emailData);
+      addedEmails.push(newEmail);
     }
-
-    // Broadcast to all connected SSE clients
-    const message = `data: ${JSON.stringify({
-      type: 'email',
-      data: emailData
-    })}\n\n`;
-
-    emailStreamClients.forEach(client => {
-      client.write(message);
-    });
-
+    
     res.json({
       success: true,
-      message: 'Email streamed to frontend',
-      clientCount: emailStreamClients.size
+      message: `${addedEmails.length} email(s) added to queue`,
+      emails: addedEmails
     });
   } catch (error) {
-    console.error('Error streaming email:', error);
+    console.error('Error adding emails to queue:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -232,24 +239,107 @@ app.post('/api/emails/stream-email', (req, res) => {
   }
 });
 
-// Endpoint to signal campaign completion
-app.post('/api/emails/stream-complete', (req, res) => {
+// Get all pending emails
+app.get('/api/email-queue/pending', async (req, res) => {
   try {
-    const message = `data: ${JSON.stringify({
-      type: 'complete',
-      data: req.body
-    })}\n\n`;
-
-    emailStreamClients.forEach(client => {
-      client.write(message);
-    });
-
+    const emails = await getPendingEmails();
     res.json({
       success: true,
-      message: 'Completion signal sent'
+      emails,
+      count: emails.length
     });
   } catch (error) {
-    console.error('Error sending completion signal:', error);
+    console.error('Error fetching pending emails:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get all emails (with optional status filter)
+app.get('/api/email-queue', async (req, res) => {
+  try {
+    const status = req.query.status;
+    const emails = await getAllEmails(status);
+    res.json({
+      success: true,
+      emails,
+      count: emails.length
+    });
+  } catch (error) {
+    console.error('Error fetching emails:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Approve email
+app.post('/api/email-queue/:id/approve', async (req, res) => {
+  try {
+    const email = await updateEmailStatus(req.params.id, 'approved', 'approve');
+    res.json({
+      success: true,
+      message: 'Email approved',
+      email
+    });
+  } catch (error) {
+    console.error('Error approving email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Decline email
+app.post('/api/email-queue/:id/decline', async (req, res) => {
+  try {
+    const email = await updateEmailStatus(req.params.id, 'declined', 'decline');
+    res.json({
+      success: true,
+      message: 'Email declined',
+      email
+    });
+  } catch (error) {
+    console.error('Error declining email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Delete email from queue
+app.delete('/api/email-queue/:id', async (req, res) => {
+  try {
+    await deleteEmailFromQueue(req.params.id);
+    res.json({
+      success: true,
+      message: 'Email deleted from queue'
+    });
+  } catch (error) {
+    console.error('Error deleting email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Clear emails by status
+app.delete('/api/email-queue/status/:status', async (req, res) => {
+  try {
+    const count = await clearEmailsByStatus(req.params.status);
+    res.json({
+      success: true,
+      message: `${count} email(s) cleared`,
+      count
+    });
+  } catch (error) {
+    console.error('Error clearing emails:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -260,16 +350,23 @@ app.post('/api/emails/stream-complete', (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Organization API server running on http://localhost:${PORT}`);
-  console.log(`📊 GET  http://localhost:${PORT}/api/organizations - Get all organizations`);
-  console.log(`📈 GET  http://localhost:${PORT}/api/organizations/statistics - Get statistics`);
-  console.log(`➕ POST http://localhost:${PORT}/api/organizations - Add organization`);
-  console.log(`📥 POST http://localhost:${PORT}/api/organizations/import - Import organizations`);
-  console.log(`🗑️  DEL  http://localhost:${PORT}/api/organizations/:id - Delete organization`);
-  console.log(`❌ POST http://localhost:${PORT}/api/organization/error - Mark as error (n8n)`);
-  console.log(`✅ POST http://localhost:${PORT}/api/organization/success - Mark as success (n8n)`);
-  console.log(`🔍 POST http://localhost:${PORT}/api/apollo/results - Store Apollo search results`);
-  console.log(`📋 GET  http://localhost:${PORT}/api/apollo/pending - Get pending Apollo organizations`);
-  console.log(`✔️  POST http://localhost:${PORT}/api/apollo/decisions - Accept/decline Apollo orgs`);
+  console.log(`\n📊 Organizations:`);
+  console.log(`   GET  http://localhost:${PORT}/api/organizations - Get all organizations`);
+  console.log(`   GET  http://localhost:${PORT}/api/organizations/statistics - Get statistics`);
+  console.log(`   POST http://localhost:${PORT}/api/organizations - Add organization`);
+  console.log(`   POST http://localhost:${PORT}/api/organizations/import - Import organizations`);
+  console.log(`   DEL  http://localhost:${PORT}/api/organizations/:id - Delete organization`);
+  console.log(`\n🔍 Apollo:`);
+  console.log(`   POST http://localhost:${PORT}/api/apollo/results - Store Apollo search results`);
+  console.log(`   GET  http://localhost:${PORT}/api/apollo/pending - Get pending Apollo organizations`);
+  console.log(`   POST http://localhost:${PORT}/api/apollo/decisions - Accept/decline Apollo orgs`);
+  console.log(`\n📧 Email Queue:`);
+  console.log(`   POST http://localhost:${PORT}/api/email-queue - Add email(s) to queue (n8n)`);
+  console.log(`   GET  http://localhost:${PORT}/api/email-queue/pending - Get pending emails`);
+  console.log(`   GET  http://localhost:${PORT}/api/email-queue?status=X - Get emails by status`);
+  console.log(`   POST http://localhost:${PORT}/api/email-queue/:id/approve - Approve email`);
+  console.log(`   POST http://localhost:${PORT}/api/email-queue/:id/decline - Decline email`);
+  console.log(`   DEL  http://localhost:${PORT}/api/email-queue/:id - Delete email`);
   console.log(`📋 GET  http://localhost:${PORT}/api/leads - Get leads from Pipedrive`);
   console.log(`🧹 DEL  http://localhost:${PORT}/api/apollo/pending - Clear Apollo pending queue`);
 });

@@ -1,37 +1,34 @@
-.streaming-container {
+.pending-emails-container {
   margin: 20px 0;
-  padding: 15px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 8px;
-  color: white;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.streaming-container h3 {
+.pending-emails-container h3 {
   margin: 0 0 10px 0;
-  font-size: 1.2em;
+  font-size: 1.3em;
+  color: var(--text-primary);
 }
 
-.streaming-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.review-instructions {
+  margin: 10px 0 20px 0;
+  color: var(--text-secondary);
   font-size: 0.95em;
 }
 
-.streaming-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  animation: pulse 2s ease-in-out infinite;
+.no-emails-message {
+  text-align: center;
+  padding: 40px 20px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 1.1em;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+.no-emails-message p {
+  margin: 0;
 }
 
 .emails-list {
@@ -50,6 +47,10 @@
   padding: 15px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   animation: slideIn 0.3s ease-out;
+}
+
+.email-card.pending {
+  border-left: 4px solid #667eea;
 }
 
 @keyframes slideIn {
@@ -122,6 +123,53 @@
   margin: 0;
 }
 
+.email-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.email-actions .btn {
+  flex: 1;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.email-actions .btn-success {
+  background: #10b981;
+  color: white;
+}
+
+.email-actions .btn-success:hover {
+  background: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+}
+
+.email-actions .btn-danger {
+  background: #ef4444;
+  color: white;
+}
+
+.email-actions .btn-danger:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+}
+
+.email-actions .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .email-campaign {
   animation: fadeIn 0.3s ease-in;
 }
@@ -172,11 +220,19 @@
 
 .campaign-trigger {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
   padding: 2rem;
   background-color: var(--bg-secondary);
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.warning-text {
+  color: var(--error-color);
+  margin: 0;
+  font-size: 0.95em;
 }
 
 .btn-large {

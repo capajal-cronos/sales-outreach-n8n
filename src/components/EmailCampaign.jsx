@@ -1,27 +1,23 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import './EmailCampaign.css';
 
 function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious }) {
   const [isSending, setIsSending] = useState(false);
   const [lastRunResult, setLastRunResult] = useState(null);
   const [leadsCount, setLeadsCount] = useState(0);
-  const [streamingEmails, setStreamingEmails] = useState([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const eventSourceRef = useRef(null);
+  const [pendingEmails, setPendingEmails] = useState([]);
   
   // n8n webhook URL
   const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook-test/send-leads-mails';
 
-  // Fetch leads count on mount
+  // Fetch leads count and pending emails on mount
   useEffect(() => {
     fetchLeadsCount();
+    fetchPendingEmails();
     
-    // Cleanup SSE connection on unmount
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-    };
+    // Poll for new emails every 5 seconds
+    const interval = setInterval(fetchPendingEmails, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchLeadsCount = async () => {
@@ -36,49 +32,66 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
     }
   };
 
-  const startEmailStream = () => {
-    // Close existing connection if any
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-
-    // Clear previous emails
-    setStreamingEmails([]);
-    setIsStreaming(true);
-
-    // Create new SSE connection
-    const eventSource = new EventSource('http://localhost:3001/api/emails/stream');
-    eventSourceRef.current = eventSource;
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === 'connected') {
-          console.log('Connected to email stream');
-        } else if (data.type === 'email') {
-          console.log('Received email:', data.data);
-          setStreamingEmails(prev => [...prev, data.data]);
-        } else if (data.type === 'complete') {
-          console.log('Campaign complete');
-          setIsStreaming(false);
-          setLastRunResult({
-            success: true,
-            message: `Campaign completed! ${streamingEmails.length} emails processed.`,
-            timestamp: new Date().toISOString()
-          });
-          eventSource.close();
-        }
-      } catch (error) {
-        console.error('Error parsing SSE message:', error);
+  const fetchPendingEmails = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/api/email-queue/pending');
+      if (response.ok) {
+        const data = await response.json();
+        setPendingEmails(data.emails || []);
       }
-    };
+    } catch (error) {
+      console.error('Error fetching pending emails:', error);
+    }
+  };
 
-    eventSource.onerror = (error) => {
-      console.error('SSE error:', error);
-      setIsStreaming(false);
-      eventSource.close();
-    };
+  const handleApproveEmail = async (emailId) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/email-queue/${emailId}/approve`, {
+        method: 'POST'
+      });
+      
+      if (response.ok) {
+        // Refresh the pending emails list
+        await fetchPendingEmails();
+        setLastRunResult({
+          success: true,
+          message: 'Email approved successfully!',
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Error approving email:', error);
+      setLastRunResult({
+        success: false,
+        message: `Failed to approve email: ${error.message}`,
+        timestamp: new Date().toISOString()
+      });
+    }
+  };
+
+  const handleDeclineEmail = async (emailId) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/email-queue/${emailId}/decline`, {
+        method: 'POST'
+      });
+      
+      if (response.ok) {
+        // Refresh the pending emails list
+        await fetchPendingEmails();
+        setLastRunResult({
+          success: true,
+          message: 'Email declined successfully!',
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Error declining email:', error);
+      setLastRunResult({
+        success: false,
+        message: `Failed to decline email: ${error.message}`,
+        timestamp: new Date().toISOString()
+      });
+    }
   };
 
   const handleTriggerCampaign = async () => {
@@ -87,9 +100,6 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
 
     try {
       console.log('Fetching leads from Pipedrive...');
-      
-      // Start listening to email stream
-      startEmailStream();
       
       // First, fetch all leads from our API
       const leadsResponse = await fetch('http://localhost:3001/api/leads');
@@ -121,9 +131,11 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
         console.log('n8n workflow triggered successfully:', data);
         setLastRunResult({
           success: true,
-          message: `Email campaign workflow started! Streaming ${leads.length} emails...`,
+          message: `Email campaign workflow started! Generated emails will appear in the queue below for review.`,
           timestamp: new Date().toISOString()
         });
+        // Refresh pending emails after a short delay to allow n8n to process
+        setTimeout(fetchPendingEmails, 2000);
       } else {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -134,10 +146,6 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
         message: `Failed to trigger workflow: ${error.message}`,
         timestamp: new Date().toISOString()
       });
-      setIsStreaming(false);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
     } finally {
       setIsSending(false);
     }
@@ -147,7 +155,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
     <div className="email-campaign">
       <div className="section-header">
         <h2>📧 Email Campaign</h2>
-        <p>Trigger the automated email campaign workflow</p>
+        <p>Trigger the automated email campaign workflow and review generated emails</p>
       </div>
 
       <div className="campaign-info">
@@ -159,7 +167,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
             <li>Filters leads based on their current label (excludes "last_mail" and "answered")</li>
             <li>Determines the next email stage for each lead</li>
             <li>Uses AI to write personalized emails based on the stage</li>
-            <li>Sends approval emails for review</li>
+            <li>Adds emails to the queue for your review</li>
             <li>Sends approved emails and updates lead labels</li>
           </ul>
         </div>
@@ -202,49 +210,64 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
           </div>
         )}
 
-        {/* Streaming emails display */}
-        {isStreaming && (
-          <div className="streaming-container">
-            <h3>📨 Incoming Emails ({streamingEmails.length})</h3>
-            <div className="streaming-status">
-              <span className="streaming-indicator">🔴 Live</span>
-              <span>Receiving emails in real-time...</span>
+        {/* Pending emails for review */}
+        {pendingEmails.length > 0 && (
+          <div className="pending-emails-container">
+            <h3>📬 Pending Emails for Review ({pendingEmails.length})</h3>
+            <p className="review-instructions">Review each email and approve or decline before sending.</p>
+            
+            <div className="emails-list">
+              {pendingEmails.map((email) => (
+                <div key={email.id} className="email-card pending">
+                  <div className="email-header">
+                    <span className="email-stage">{email.email_stage}</span>
+                    <span className="email-time">
+                      {new Date(email.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="email-details">
+                    <p><strong>To:</strong> {email.first_name} ({email.email})</p>
+                    <p><strong>Lead ID:</strong> {email.lead_id}</p>
+                    <p><strong>Subject:</strong> {email.subject}</p>
+                    <div className="email-body">
+                      <strong>Body:</strong>
+                      <pre>{email.body}</pre>
+                    </div>
+                  </div>
+                  <div className="email-actions">
+                    <button
+                      className="btn btn-success"
+                      onClick={() => handleApproveEmail(email.id)}
+                    >
+                      ✅ Approve & Send
+                    </button>
+                    <button
+                      className="btn btn-danger"
+                      onClick={() => handleDeclineEmail(email.id)}
+                    >
+                      ❌ Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {streamingEmails.length > 0 && (
-          <div className="emails-list">
-            {streamingEmails.map((email, index) => (
-              <div key={index} className="email-card">
-                <div className="email-header">
-                  <span className="email-number">#{index + 1}</span>
-                  <span className="email-stage">{email.email_stage}</span>
-                  <span className="email-time">
-                    {new Date(email.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-                <div className="email-details">
-                  <p><strong>To:</strong> {email.first_name} ({email.email})</p>
-                  <p><strong>Subject:</strong> {email.subject}</p>
-                  <div className="email-body">
-                    <strong>Body:</strong>
-                    <pre>{email.body}</pre>
-                  </div>
-                </div>
-              </div>
-            ))}
+        {pendingEmails.length === 0 && (
+          <div className="no-emails-message">
+            <p>📭 No pending emails. Start a campaign to generate emails for review.</p>
           </div>
         )}
 
         <div className="workflow-notes">
           <h4>📝 Notes:</h4>
           <ul>
-            <li>Emails will stream to the frontend in real-time as they're generated</li>
-            <li>You can see each email as it's being processed</li>
-            <li>The workflow processes leads individually</li>
-            <li>Lead labels will be automatically updated after sending</li>
-            <li>No need to wait for all emails to be generated</li>
+            <li>Generated emails are added to a queue for your review</li>
+            <li>Approve emails you want to send, decline those you don't</li>
+            <li>The page automatically refreshes every 5 seconds to show new emails</li>
+            <li>Lead labels will be automatically updated after sending approved emails</li>
+            <li>Declined emails are marked but not sent</li>
           </ul>
         </div>
       </div>

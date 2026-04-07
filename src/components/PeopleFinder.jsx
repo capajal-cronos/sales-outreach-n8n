@@ -90,59 +90,68 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
         if (data.success && data.data) {
           console.log(`Fetching details for ${data.data.length} persons...`);
           
-          // Fetch detailed info for each person using v2 API to get headline and LinkedIn
-          const detailedPersons = await Promise.all(
-            data.data.map(async (person, index) => {
-              try {
-                // Use v2 API endpoint for better data
-                const detailResponse = await fetch(
-                  `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`
-                );
-                
-                console.log(`Person ${index + 1} - Response status:`, detailResponse.status);
-                
-                if (detailResponse.ok) {
-                  const detailData = await detailResponse.json();
-                  
-                  // Log first person's full v2 response to see structure
-                  if (index === 0) {
-                    console.log('First person v2 API response:', JSON.stringify(detailData, null, 2));
-                  }
-                  
-                  if (detailData.success && detailData.data) {
-                    const personData = detailData.data;
-                    
-                    // Extract headline and LinkedIn from custom_fields using specific keys
-                    let headline = '';
-                    let linkedinUrl = '';
-                    
-                    if (personData.custom_fields) {
-                      // LinkedIn is in field: 7b02e9595a92744d8da04aaf22be9bbb17cb4a67
-                      linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
-                      
-                      // Headline is in field: 86c0c96c777b219fb2989b0121c709d30882d384
-                      headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
-                    }
-                    
-                    console.log(`Person ${person.name}: headline="${headline}", linkedin="${linkedinUrl}"`);
-                    
-                    // Return combined data with extracted fields, keeping org_id from v1 API
-                    return {
-                      ...person,
-                      headline: headline,
-                      linkedin_url: linkedinUrl
-                    };
-                  }
-                } else {
-                  const errorText = await detailResponse.text();
-                  console.error(`Failed to fetch person ${person.id}:`, detailResponse.status, errorText);
-                }
-              } catch (err) {
-                console.error(`Failed to fetch details for person ${person.id}:`, err);
+          // Fetch detailed info sequentially with delay to avoid rate limits
+          const detailedPersons = [];
+          for (let index = 0; index < data.data.length; index++) {
+            const person = data.data[index];
+            
+            try {
+              // Add delay between requests to avoid rate limiting (150ms = ~6 requests/second)
+              if (index > 0) {
+                await new Promise(resolve => setTimeout(resolve, 150));
               }
-              return person;
-            })
-          );
+              
+              // Use v2 API endpoint for better data
+              const detailResponse = await fetch(
+                `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`
+              );
+              
+              console.log(`Person ${index + 1}/${data.data.length} - Response status:`, detailResponse.status);
+              
+              if (detailResponse.ok) {
+                const detailData = await detailResponse.json();
+                
+                // Log first person's full v2 response to see structure
+                if (index === 0) {
+                  console.log('First person v2 API response:', JSON.stringify(detailData, null, 2));
+                }
+                
+                if (detailData.success && detailData.data) {
+                  const personData = detailData.data;
+                  
+                  // Extract headline and LinkedIn from custom_fields using specific keys
+                  let headline = '';
+                  let linkedinUrl = '';
+                  
+                  if (personData.custom_fields) {
+                    // LinkedIn is in field: 7b02e9595a92744d8da04aaf22be9bbb17cb4a67
+                    linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
+                    
+                    // Headline is in field: 86c0c96c777b219fb2989b0121c709d30882d384
+                    headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
+                  }
+                  
+                  console.log(`Person ${person.name}: headline="${headline}", linkedin="${linkedinUrl}"`);
+                  
+                  // Add combined data with extracted fields
+                  detailedPersons.push({
+                    ...person,
+                    headline: headline,
+                    linkedin_url: linkedinUrl
+                  });
+                } else {
+                  detailedPersons.push(person);
+                }
+              } else {
+                const errorText = await detailResponse.text();
+                console.error(`Failed to fetch person ${person.id}:`, detailResponse.status, errorText);
+                detailedPersons.push(person);
+              }
+            } catch (err) {
+              console.error(`Failed to fetch details for person ${person.id}:`, err);
+              detailedPersons.push(person);
+            }
+          }
           
           console.log('Finished fetching all person details');
           setPipedrivePersons(detailedPersons);

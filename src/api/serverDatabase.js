@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename);
 
 // Database file paths
 const DB_FILE = path.join(__dirname, '../../data/organizations.json');
+const EMAIL_QUEUE_FILE = path.join(__dirname, '../../data/email_queue.json');
 const APOLLO_PENDING_FILE = path.join(__dirname, '../../data/apollo_pending.json');
 
 // Helper function to clean domain URLs
@@ -369,4 +370,115 @@ export async function getStatistics() {
     unprocessed: orgs.filter(o => !o.processed || o.processed === '').length,
     errors: orgs.filter(o => o.processed === 'error').length
   };
+}
+// ============================================
+// EMAIL QUEUE FUNCTIONS
+// ============================================
+
+// Read email queue
+async function readEmailQueue() {
+  try {
+    await ensureDataDir();
+    const data = await fs.readFile(EMAIL_QUEUE_FILE, 'utf-8');
+    
+    const trimmedData = data.trim();
+    if (!trimmedData) {
+      return [];
+    }
+    
+    try {
+      return JSON.parse(trimmedData);
+    } catch (parseError) {
+      console.error('JSON parse error in email_queue.json, resetting file:', parseError);
+      await writeEmailQueue([]);
+      return [];
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+}
+
+// Write email queue
+async function writeEmailQueue(data) {
+  await ensureDataDir();
+  await fs.writeFile(EMAIL_QUEUE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+// Add email to queue
+export async function addEmailToQueue(emailData) {
+  const queue = await readEmailQueue();
+  
+  const newEmail = {
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    lead_id: emailData.lead_id,
+    email: emailData.email,
+    first_name: emailData.first_name,
+    email_stage: emailData.email_stage,
+    subject: emailData.subject,
+    body: emailData.body,
+    status: 'pending', // pending, approved, declined, sent
+    created_at: new Date().toISOString(),
+    reviewed_at: null
+  };
+  
+  queue.push(newEmail);
+  await writeEmailQueue(queue);
+  
+  return newEmail;
+}
+
+// Get all pending emails
+export async function getPendingEmails() {
+  const queue = await readEmailQueue();
+  return queue.filter(email => email.status === 'pending');
+}
+
+// Get all emails (with optional status filter)
+export async function getAllEmails(status = null) {
+  const queue = await readEmailQueue();
+  if (status) {
+    return queue.filter(email => email.status === status);
+  }
+  return queue;
+}
+
+// Update email status (approve/decline)
+export async function updateEmailStatus(emailId, status, action) {
+  const queue = await readEmailQueue();
+  const emailIndex = queue.findIndex(email => email.id === emailId);
+  
+  if (emailIndex === -1) {
+    throw new Error('Email not found');
+  }
+  
+  queue[emailIndex].status = status;
+  queue[emailIndex].reviewed_at = new Date().toISOString();
+  
+  await writeEmailQueue(queue);
+  
+  return queue[emailIndex];
+}
+
+// Delete email from queue
+export async function deleteEmailFromQueue(emailId) {
+  const queue = await readEmailQueue();
+  const filtered = queue.filter(email => email.id !== emailId);
+  
+  if (filtered.length === queue.length) {
+    throw new Error('Email not found');
+  }
+  
+  await writeEmailQueue(filtered);
+  return true;
+}
+
+// Clear all emails with specific status
+export async function clearEmailsByStatus(status) {
+  const queue = await readEmailQueue();
+  const filtered = queue.filter(email => email.status !== status);
+  await writeEmailQueue(filtered);
+  return queue.length - filtered.length; // Return count of deleted emails
 }
