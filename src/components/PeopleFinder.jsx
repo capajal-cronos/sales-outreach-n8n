@@ -86,110 +86,78 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
     }
   };
 
+  const fetchPersonDetail = async (person) => {
+    let retries = 2;
+    while (retries >= 0) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const detailResponse = await fetch(
+          `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timeoutId);
+
+        if (detailResponse.ok) {
+          const detailData = await detailResponse.json();
+          if (detailData && detailData.success && detailData.data) {
+            const personData = detailData.data;
+            let headline = '';
+            let linkedinUrl = '';
+            if (personData.custom_fields) {
+              linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
+              headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
+            }
+            return { ...person, headline, linkedin_url: linkedinUrl };
+          }
+        } else if (retries > 0) {
+          console.warn(`Retry ${3 - retries} for person ${person.id}`);
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        if (retries > 0) {
+          console.warn(`Fetch error, retrying for person ${person.id}:`, fetchErr.message);
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      retries--;
+    }
+    console.error(`Failed to fetch person ${person.id} after retries`);
+    return { ...person, headline: null, linkedin_url: null, _detailFetchFailed: true };
+  };
+
   const fetchPipedrivePersons = async () => {
     setIsLoadingPeople(true);
-    setPipedrivePersons([]); // Clear existing people before loading new ones
+    setPipedrivePersons([]);
     try {
       const response = await fetch(
         `https://api.pipedrive.com/v1/persons?api_token=${PIPEDRIVE_API_KEY}&limit=100`
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
           console.log(`Fetching details for ${data.data.length} persons...`);
-          
-          // Fetch detailed info sequentially with delay to avoid rate limits
-          // Update state after each person so they appear one by one
+
+          const BATCH_SIZE = 5;
+          const BATCH_DELAY_MS = 600;
           let successCount = 0;
           let failCount = 0;
-          
-          for (let index = 0; index < data.data.length; index++) {
-            const person = data.data[index];
-            
-            try {
-              // Add delay between requests to avoid rate limiting (500ms = 2 requests/second)
-              if (index > 0) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-              }
-              
-              // Retry logic for API calls
-              let detailData = null;
-              let retries = 2;
-              
-              while (retries >= 0 && !detailData) {
-                try {
-                  // Use v2 API endpoint for better data
-                  const detailResponse = await fetch(
-                    `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`,
-                    { timeout: 5000 }
-                  );
-                  
-                  if (detailResponse.ok) {
-                    detailData = await detailResponse.json();
-                    break;
-                  } else if (retries > 0) {
-                    console.warn(`Retry ${3 - retries} for person ${person.id}`);
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                  }
-                } catch (fetchErr) {
-                  if (retries > 0) {
-                    console.warn(`Fetch error, retrying for person ${person.id}:`, fetchErr.message);
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                  }
-                }
-                retries--;
-              }
-              
-              if (detailData && detailData.success && detailData.data) {
-                const personData = detailData.data;
-                
-                let headline = '';
-                let linkedinUrl = '';
-                
-                if (personData.custom_fields) {
-                  linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
-                  headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
-                }
-                
-                const personWithDetails = {
-                  ...person,
-                  headline,
-                  linkedin_url: linkedinUrl
-                };
-                
-                // Update state immediately to show person one by one
-                setPipedrivePersons(prev => [...prev, personWithDetails]);
-                successCount++;
-              } else {
-                console.error(`Failed to fetch person ${person.id} after retries`);
-                // Mark as failed so we can show a retry indicator
-                const failedPerson = {
-                  ...person,
-                  headline: null,
-                  linkedin_url: null,
-                  _detailFetchFailed: true
-                };
-                
-                // Update state immediately
-                setPipedrivePersons(prev => [...prev, failedPerson]);
-                failCount++;
-              }
-            } catch (err) {
-              console.error(`Failed to fetch details for person ${person.id}:`, err);
-              const failedPerson = {
-                ...person,
-                headline: null,
-                linkedin_url: null,
-                _detailFetchFailed: true
-              };
-              
-              // Update state immediately
-              setPipedrivePersons(prev => [...prev, failedPerson]);
-              failCount++;
+
+          for (let i = 0; i < data.data.length; i += BATCH_SIZE) {
+            const batch = data.data.slice(i, i + BATCH_SIZE);
+            const results = await Promise.all(batch.map(person => fetchPersonDetail(person)));
+
+            setPipedrivePersons(prev => [...prev, ...results]);
+            successCount += results.filter(p => !p._detailFetchFailed).length;
+            failCount += results.filter(p => p._detailFetchFailed).length;
+
+            if (i + BATCH_SIZE < data.data.length) {
+              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
             }
           }
-          
+
           console.log(`Finished fetching person details: ${successCount} successful, ${failCount} failed`);
         }
       }

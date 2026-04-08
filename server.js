@@ -21,7 +21,9 @@ import {
   getAllEmails,
   updateEmailStatus,
   deleteEmailFromQueue,
-  clearEmailsByStatus
+  clearEmailsByStatus,
+  addResponse,
+  getAllResponses
 } from './src/api/serverDatabase.js';
 
 const app = express();
@@ -118,8 +120,10 @@ app.get('/api/leads', async (req, res) => {
       });
     }
 
+    const skipFilter = req.query.showAll === 'true';
+
     // Fetch leads from Pipedrive API
-    const response = await fetch(`https://api.pipedrive.com/v1/leads?api_token=${PIPEDRIVE_API_KEY}`);
+    const response = await fetch(`https://api.pipedrive.com/v1/leads?api_token=${PIPEDRIVE_API_KEY}&limit=500`);
     
     if (!response.ok) {
       throw new Error(`Pipedrive API error: ${response.status}`);
@@ -181,8 +185,8 @@ app.get('/api/leads', async (req, res) => {
       };
     }));
 
-    // Filter out leads with "answered" or "last_mail" labels
-    const filteredLeads = allLeads.filter(lead => {
+    // Filter out leads with "answered" or "last_mail" labels (skip when showAll=true)
+    const filteredLeads = skipFilter ? allLeads : allLeads.filter(lead => {
       const label = lead.label.toLowerCase();
       return label !== 'answered' && label !== 'last_mail' && label !== 'last mail';
     });
@@ -428,6 +432,32 @@ app.delete('/api/email-queue/status/:status', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// ============================================
+// RESPONSE TRACKING ENDPOINTS
+// ============================================
+
+// n8n POSTs reply data here when it detects a reply via IMAP
+app.post('/api/responses', async (req, res) => {
+  try {
+    const response = await addResponse(req.body);
+    res.json({ success: true, response });
+  } catch (error) {
+    console.error('Error storing response:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Frontend polls this to display replies
+app.get('/api/responses', async (req, res) => {
+  try {
+    const responses = await getAllResponses();
+    res.json({ success: true, responses, count: responses.length });
+  } catch (error) {
+    console.error('Error fetching responses:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

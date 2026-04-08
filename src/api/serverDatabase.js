@@ -305,7 +305,7 @@ export async function processApolloDecisions(decisions) {
           location: '',
           revenue: '',
           description: '',
-          processed: 'success',
+          processed: 'yes',
           error_message: '',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -372,6 +372,59 @@ export async function getStatistics() {
   };
 }
 // ============================================
+// RESPONSES FUNCTIONS
+// ============================================
+
+const RESPONSES_FILE = path.join(__dirname, '../../data/responses.json');
+
+async function readResponses() {
+  try {
+    await ensureDataDir();
+    const data = await fs.readFile(RESPONSES_FILE, 'utf-8');
+    const trimmedData = data.trim();
+    if (!trimmedData) return [];
+    try {
+      return JSON.parse(trimmedData);
+    } catch (parseError) {
+      console.error('JSON parse error in responses.json, resetting:', parseError);
+      await fs.writeFile(RESPONSES_FILE, '[]', 'utf-8');
+      return [];
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+async function writeResponses(data) {
+  await ensureDataDir();
+  await fs.writeFile(RESPONSES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+export async function addResponse(responseData) {
+  const responses = await readResponses();
+  const newResponse = {
+    id: Date.now().toString() + Math.random().toString(36).substring(2, 11),
+    from: responseData.from || '',
+    subject: responseData.subject || '',
+    date: responseData.date || new Date().toISOString(),
+    snippet: responseData.snippet || '',
+    person_id: responseData.person_id || null,
+    person_name: responseData.person_name || '',
+    lead_id: responseData.lead_id || null,
+    lead_title: responseData.lead_title || '',
+    received_at: new Date().toISOString()
+  };
+  responses.unshift(newResponse); // newest first
+  await writeResponses(responses);
+  return newResponse;
+}
+
+export async function getAllResponses() {
+  return await readResponses();
+}
+
+// ============================================
 // EMAIL QUEUE FUNCTIONS
 // ============================================
 
@@ -412,7 +465,7 @@ export async function addEmailToQueue(emailData) {
   const queue = await readEmailQueue();
   
   const newEmail = {
-    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    id: Date.now().toString() + Math.random().toString(36).substring(2, 11),
     lead_id: emailData.lead_id,
     email: emailData.email,
     first_name: emailData.first_name,

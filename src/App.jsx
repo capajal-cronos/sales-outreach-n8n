@@ -24,15 +24,11 @@ function App() {
     };
   });
 
-  // Load data from localStorage on mount
+  // Sync workflow data and current step to localStorage
   useEffect(() => {
-    const savedData = localStorage.getItem('n8n-workflow-data');
-    if (savedData) {
-      setWorkflowData(JSON.parse(savedData));
-    }
-  }, []);
+    localStorage.setItem('n8n-workflow-data', JSON.stringify(workflowData));
+  }, [workflowData]);
 
-  // Save current step to localStorage
   useEffect(() => {
     localStorage.setItem('n8n-current-step', currentStep.toString());
   }, [currentStep]);
@@ -46,15 +42,7 @@ function App() {
   ];
 
   const updateWorkflowData = (key, data) => {
-    setWorkflowData(prev => ({
-      ...prev,
-      [key]: data
-    }));
-    // Save to localStorage
-    localStorage.setItem('n8n-workflow-data', JSON.stringify({
-      ...workflowData,
-      [key]: data
-    }));
+    setWorkflowData(prev => ({ ...prev, [key]: data }));
   };
 
   const goToNextStep = () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './LeadManagement.css';
 
 function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }) {
@@ -8,11 +8,14 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
   const [selectedLeads, setSelectedLeads] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [labelMapping, setLabelMapping] = useState({});
+  const hasFetchedRef = useRef(false);
 
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 
-  // Fetch label mappings and leads from Pipedrive on component mount
+  // Fetch label mappings and leads on mount — guarded against StrictMode double-invoke
   useEffect(() => {
+    if (hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
     fetchLabelMapping();
     fetchLeads();
   }, []);
@@ -43,99 +46,16 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
   const fetchLeads = async () => {
     setIsLoading(true);
     try {
-      // Fetch leads directly from Pipedrive API
-      const response = await fetch(
-        `https://api.pipedrive.com/v1/leads?api_token=${PIPEDRIVE_API_KEY}&limit=500`
-      );
-      
+      const response = await fetch('http://localhost:3001/api/leads?showAll=true');
       if (response.ok) {
         const data = await response.json();
-        if (data.success && data.data) {
-          console.log(`Fetching details for ${data.data.length} leads...`);
-          
-          // Fetch detailed info sequentially with delay to avoid rate limits
-          const detailedLeads = [];
-          for (let index = 0; index < data.data.length; index++) {
-            const lead = data.data[index];
-            
-            try {
-              // Add delay between requests (150ms = ~6 requests/second)
-              if (index > 0) {
-                await new Promise(resolve => setTimeout(resolve, 150));
-              }
-              
-              const detailResponse = await fetch(
-                `https://api.pipedrive.com/v1/leads/${lead.id}?api_token=${PIPEDRIVE_API_KEY}`
-              );
-              
-              if (detailResponse.ok) {
-                const detailData = await detailResponse.json();
-                if (detailData.success && detailData.data) {
-                  const leadData = detailData.data;
-                  
-                  // Fetch organization name if we have an organization_id
-                  if (leadData.organization_id && typeof leadData.organization_id === 'number') {
-                    try {
-                      await new Promise(resolve => setTimeout(resolve, 150));
-                      const orgResponse = await fetch(
-                        `https://api.pipedrive.com/v1/organizations/${leadData.organization_id}?api_token=${PIPEDRIVE_API_KEY}`
-                      );
-                      if (orgResponse.ok) {
-                        const orgData = await orgResponse.json();
-                        if (orgData.success && orgData.data) {
-                          leadData.organization_name = orgData.data.name;
-                        }
-                      }
-                    } catch (err) {
-                      console.error(`Failed to fetch org ${leadData.organization_id}:`, err);
-                    }
-                  }
-                  
-                  // Fetch person email if we have a person_id
-                  if (leadData.person_id && typeof leadData.person_id === 'number') {
-                    try {
-                      await new Promise(resolve => setTimeout(resolve, 150));
-                      const personResponse = await fetch(
-                        `https://api.pipedrive.com/v1/persons/${leadData.person_id}?api_token=${PIPEDRIVE_API_KEY}`
-                      );
-                      if (personResponse.ok) {
-                        const personData = await personResponse.json();
-                        if (personData.success && personData.data) {
-                          leadData.person_email = personData.data.email?.[0]?.value || personData.data.email;
-                        }
-                      }
-                    } catch (err) {
-                      console.error(`Failed to fetch person ${leadData.person_id}:`, err);
-                    }
-                  }
-                  
-                  detailedLeads.push(leadData);
-                } else {
-                  detailedLeads.push(lead);
-                }
-              } else {
-                console.error(`Failed to fetch lead ${lead.id}:`, detailResponse.status);
-                detailedLeads.push(lead);
-              }
-            } catch (err) {
-              console.error(`Failed to fetch details for lead ${lead.id}:`, err);
-              detailedLeads.push(lead);
-            }
-            
-            // Update progress
-            if ((index + 1) % 5 === 0) {
-              console.log(`Progress: ${index + 1}/${data.data.length} leads processed`);
-            }
-          }
-          
-          console.log('Finished fetching all lead details');
-          setLeads(detailedLeads);
-          updateWorkflowData('leads', detailedLeads);
+        if (data.success) {
+          setLeads(data.leads || []);
+          updateWorkflowData('leads', data.leads || []);
         }
       }
     } catch (error) {
       console.error('Error fetching leads:', error);
-      // If API fails, use workflow data as fallback
       setLeads(workflowData.leads || []);
     } finally {
       setIsLoading(false);
@@ -324,11 +244,8 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
                         ? lead.label_ids.map(id => labelMapping[id] || id).join(', ')
                         : 'No Label';
                       
-                      // Use the fetched organization name
-                      const orgName = lead.organization_name || lead.organization?.name || '-';
-                      
-                      // Use the fetched person email
-                      const email = lead.person_email || lead.email || '-';
+                      const orgName = lead.organization || '-';
+                      const email = lead.email || '-';
                       
                       return (
                         <tr key={lead.id} className={selectedLeads.includes(lead.id) ? 'selected' : ''}>
@@ -356,7 +273,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious }
                               {labelNames}
                             </span>
                           </td>
-                          <td>{lead.add_time ? new Date(lead.add_time).toLocaleDateString() : '-'}</td>
+                          <td>{lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : '-'}</td>
                         </tr>
                       );
                     })}

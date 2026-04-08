@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './EmailCampaign.css';
 
 function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious }) {
@@ -7,21 +7,23 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
   const [leadsCount, setLeadsCount] = useState(0);
   const [pendingEmails, setPendingEmails] = useState([]);
   const [processingEmails, setProcessingEmails] = useState(0);
-  
+
+  const processingEmailsRef = useRef(0);
+  const pendingEmailsLengthRef = useRef(0);
+  useEffect(() => { processingEmailsRef.current = processingEmails; }, [processingEmails]);
+  useEffect(() => { pendingEmailsLengthRef.current = pendingEmails.length; }, [pendingEmails.length]);
+
   // n8n webhook URL
   const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook-test/send-leads-mails';
 
-  // Fetch leads count and pending emails on mount
+  // Fetch leads count and pending emails on mount, then poll every 5 seconds
   useEffect(() => {
     fetchLeadsCount();
     fetchPendingEmails();
-    
-    // Poll for new emails every 5 seconds
+
     const interval = setInterval(() => {
       fetchPendingEmails();
-      // Clear processing indicator if no emails are being generated
-      if (processingEmails > 0 && pendingEmails.length === 0) {
-        // Check if we've been waiting too long (30 seconds)
+      if (processingEmailsRef.current > 0 && pendingEmailsLengthRef.current === 0) {
         const timeSinceStart = Date.now() - (window.campaignStartTime || 0);
         if (timeSinceStart > 30000) {
           setProcessingEmails(0);
@@ -29,11 +31,11 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [processingEmails, pendingEmails.length]);
+  }, []);
 
   const fetchLeadsCount = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/leads');
+      const response = await fetch('http://localhost:3001/api/leads?showAll=true');
       if (response.ok) {
         const data = await response.json();
         setLeadsCount(data.count || 0);
@@ -50,11 +52,6 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
         const data = await response.json();
         const emails = data.emails || [];
         setPendingEmails(emails);
-        
-        // If we have emails now, clear the processing indicator
-        if (emails.length > 0 && processingEmails > 0) {
-          setProcessingEmails(0);
-        }
       }
     } catch (error) {
       console.error('Error fetching pending emails:', error);
@@ -85,6 +82,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       });
       
       if (response.ok) {
+        await fetchPendingEmails();
         setLastRunResult({
           success: true,
           message: 'Email approved and sent to n8n!',
@@ -93,7 +91,6 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       }
     } catch (error) {
       console.error('Error approving email:', error);
-      // Re-fetch to restore state on error
       await fetchPendingEmails();
       setLastRunResult({
         success: false,
@@ -127,6 +124,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       });
       
       if (response.ok) {
+        await fetchPendingEmails();
         setLastRunResult({
           success: true,
           message: 'Email declined and notification sent to n8n!',
@@ -135,7 +133,6 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       }
     } catch (error) {
       console.error('Error declining email:', error);
-      // Re-fetch to restore state on error
       await fetchPendingEmails();
       setLastRunResult({
         success: false,
@@ -153,7 +150,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       console.log('Fetching leads from Pipedrive...');
       
       // First, fetch all leads from our API
-      const leadsResponse = await fetch('http://localhost:3001/api/leads');
+      const leadsResponse = await fetch('http://localhost:3001/api/leads?showAll=true');
       if (!leadsResponse.ok) {
         throw new Error('Failed to fetch leads from Pipedrive');
       }
