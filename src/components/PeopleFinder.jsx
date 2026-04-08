@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './PeopleFinder.css';
 
 function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) {
@@ -9,24 +9,31 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
     personDepartments: [],
     personLocations: [],
     verifiedEmailOnly: false,
-    perPage: 25,
-    maxPages: 4,
+    perPage: 10,
+    maxPages: 5,
     peoplePerCompany: 5  // New parameter to limit people per company
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingPeople, setIsLoadingPeople] = useState(true);
   const [searchResults, setSearchResults] = useState(workflowData.people || []);
   const [pipedrivePersons, setPipedrivePersons] = useState([]);
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState([]);
   const [headlineModal, setHeadlineModal] = useState({ show: false, headline: '', name: '' });
+  
+  // Ref to prevent double fetching in StrictMode
+  const hasFetchedRef = useRef(false);
 
   // Get Pipedrive API key from environment
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 
   // Fetch people and organizations from Pipedrive on mount
   useEffect(() => {
-    fetchPipedrivePersons();
-    fetchPipedriveOrganizations();
+    if (!hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchPipedrivePersons();
+      fetchPipedriveOrganizations();
+    }
   }, []);
 
   // Update workflowData when pipedrivePersons changes
@@ -80,6 +87,8 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
   };
 
   const fetchPipedrivePersons = async () => {
+    setIsLoadingPeople(true);
+    setPipedrivePersons([]); // Clear existing people before loading new ones
     try {
       const response = await fetch(
         `https://api.pipedrive.com/v1/persons?api_token=${PIPEDRIVE_API_KEY}&limit=100`
@@ -91,74 +100,103 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
           console.log(`Fetching details for ${data.data.length} persons...`);
           
           // Fetch detailed info sequentially with delay to avoid rate limits
-          const detailedPersons = [];
+          // Update state after each person so they appear one by one
+          let successCount = 0;
+          let failCount = 0;
+          
           for (let index = 0; index < data.data.length; index++) {
             const person = data.data[index];
             
             try {
-              // Add delay between requests to avoid rate limiting (150ms = ~6 requests/second)
+              // Add delay between requests to avoid rate limiting (500ms = 2 requests/second)
               if (index > 0) {
-                await new Promise(resolve => setTimeout(resolve, 150));
+                await new Promise(resolve => setTimeout(resolve, 500));
               }
               
-              // Use v2 API endpoint for better data
-              const detailResponse = await fetch(
-                `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`
-              );
+              // Retry logic for API calls
+              let detailData = null;
+              let retries = 2;
               
-              console.log(`Person ${index + 1}/${data.data.length} - Response status:`, detailResponse.status);
-              
-              if (detailResponse.ok) {
-                const detailData = await detailResponse.json();
-                
-                // Log first person's full v2 response to see structure
-                if (index === 0) {
-                  console.log('First person v2 API response:', JSON.stringify(detailData, null, 2));
-                }
-                
-                if (detailData.success && detailData.data) {
-                  const personData = detailData.data;
+              while (retries >= 0 && !detailData) {
+                try {
+                  // Use v2 API endpoint for better data
+                  const detailResponse = await fetch(
+                    `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`,
+                    { timeout: 5000 }
+                  );
                   
-                  // Extract headline and LinkedIn from custom_fields using specific keys
-                  let headline = '';
-                  let linkedinUrl = '';
-                  
-                  if (personData.custom_fields) {
-                    // LinkedIn is in field: 7b02e9595a92744d8da04aaf22be9bbb17cb4a67
-                    linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
-                    
-                    // Headline is in field: 86c0c96c777b219fb2989b0121c709d30882d384
-                    headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
+                  if (detailResponse.ok) {
+                    detailData = await detailResponse.json();
+                    break;
+                  } else if (retries > 0) {
+                    console.warn(`Retry ${3 - retries} for person ${person.id}`);
+                    await new Promise(resolve => setTimeout(resolve, 500));
                   }
-                  
-                  console.log(`Person ${person.name}: headline="${headline}", linkedin="${linkedinUrl}"`);
-                  
-                  // Add combined data with extracted fields
-                  detailedPersons.push({
-                    ...person,
-                    headline: headline,
-                    linkedin_url: linkedinUrl
-                  });
-                } else {
-                  detailedPersons.push(person);
+                } catch (fetchErr) {
+                  if (retries > 0) {
+                    console.warn(`Fetch error, retrying for person ${person.id}:`, fetchErr.message);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                  }
                 }
+                retries--;
+              }
+              
+              if (detailData && detailData.success && detailData.data) {
+                const personData = detailData.data;
+                
+                let headline = '';
+                let linkedinUrl = '';
+                
+                if (personData.custom_fields) {
+                  linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
+                  headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
+                }
+                
+                const personWithDetails = {
+                  ...person,
+                  headline,
+                  linkedin_url: linkedinUrl
+                };
+                
+                // Update state immediately to show person one by one
+                setPipedrivePersons(prev => [...prev, personWithDetails]);
+                successCount++;
               } else {
-                const errorText = await detailResponse.text();
-                console.error(`Failed to fetch person ${person.id}:`, detailResponse.status, errorText);
-                detailedPersons.push(person);
+                console.error(`Failed to fetch person ${person.id} after retries`);
+                // Mark as failed so we can show a retry indicator
+                const failedPerson = {
+                  ...person,
+                  headline: null,
+                  linkedin_url: null,
+                  _detailFetchFailed: true
+                };
+                
+                // Update state immediately
+                setPipedrivePersons(prev => [...prev, failedPerson]);
+                failCount++;
               }
             } catch (err) {
               console.error(`Failed to fetch details for person ${person.id}:`, err);
-              detailedPersons.push(person);
+              const failedPerson = {
+                ...person,
+                headline: null,
+                linkedin_url: null,
+                _detailFetchFailed: true
+              };
+              
+              // Update state immediately
+              setPipedrivePersons(prev => [...prev, failedPerson]);
+              failCount++;
             }
           }
           
-          console.log('Finished fetching all person details');
-          setPipedrivePersons(detailedPersons);
+          console.log(`Finished fetching person details: ${successCount} successful, ${failCount} failed`);
         }
       }
     } catch (err) {
       console.error('Failed to fetch Pipedrive persons:', err);
+    } finally {
+      setIsLoadingPeople(false);
     }
   };
 
@@ -404,7 +442,12 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
       </div>
 
       {/* Pipedrive People */}
-      {pipedrivePersons.length > 0 && (
+      {isLoadingPeople ? (
+        <div className="loading-container">
+          <div className="spinner-large"></div>
+          <p>Loading people from Pipedrive...</p>
+        </div>
+      ) : pipedrivePersons.length > 0 && (
         <div className="pipedrive-people">
           <h3>📋 People in Pipedrive ({pipedrivePersons.length})</h3>
           <div className="pipedrive-table-container">
@@ -429,7 +472,9 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
                     <tr key={person.id}>
                       <td><strong>{person.name}</strong></td>
                       <td style={{ fontSize: '0.9em', color: '#666' }}>
-                        {headline ? (
+                        {person._detailFetchFailed ? (
+                          <span style={{ color: 'orange' }}>⚠️ Failed to load</span>
+                        ) : headline ? (
                           headline.length > 50 ? (
                             <span
                               style={{ cursor: 'pointer', color: 'var(--primary-color)' }}
@@ -447,7 +492,9 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
                       <td>{person.phone && person.phone[0] ? person.phone[0].value : '-'}</td>
                       <td>{person.org_id?.name || '-'}</td>
                       <td>
-                        {linkedinUrl ? (
+                        {person._detailFetchFailed ? (
+                          <span style={{ color: 'orange' }}>⚠️ Failed to load</span>
+                        ) : linkedinUrl ? (
                           <a href={linkedinUrl.startsWith('http') ? linkedinUrl : `https://${linkedinUrl}`} target="_blank" rel="noopener noreferrer">
                             LinkedIn
                           </a>

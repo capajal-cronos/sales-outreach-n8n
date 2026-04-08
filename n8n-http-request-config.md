@@ -23,6 +23,7 @@
   "lead_id": "={{ $json.lead_id }}",
   "email": "={{ $json.email }}",
   "first_name": "={{ $json.first_name }}",
+  "last_name": "={{ $json.last_name }}",
   "email_stage": "={{ $json.email_stage }}",
   "subject": "={{ $json.subject }}",
   "body": "={{ $json.body }}",

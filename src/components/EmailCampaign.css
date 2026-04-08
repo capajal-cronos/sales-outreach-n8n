@@ -333,3 +333,108 @@
     text-align: center;
   }
 }
+/* Workflow Summary - Compact Design */
+.workflow-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.summary-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 8px;
+  border-left: 4px solid #667eea;
+}
+
+.summary-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.summary-content {
+  flex: 1;
+}
+
+.summary-content strong {
+  display: block;
+  font-size: 14px;
+  color: #2d3748;
+  margin-bottom: 4px;
+}
+
+.summary-content p {
+  font-size: 13px;
+  color: #4a5568;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Processing Indicator */
+.processing-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  padding: 30px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  color: white;
+  margin: 20px 0;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.processing-indicator p {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Pending Header - Compact Design */
+.pending-header {
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.pending-header h3 {
+  margin: 0 0 5px 0;
+  font-size: 18px;
+  color: #2d3748;
+}
+
+.pending-header p {
+  margin: 0;
+  font-size: 13px;
+  color: #718096;
+}

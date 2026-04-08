@@ -214,10 +214,21 @@ app.post('/api/email-queue', async (req, res) => {
     const emails = Array.isArray(req.body) ? req.body : [req.body];
     
     const addedEmails = [];
+    const rejectedEmails = [];
+    
     for (const emailData of emails) {
       // Validate required fields
-      if (!emailData.lead_id || !emailData.email || !emailData.subject || !emailData.body) {
-        console.error('Invalid email data:', emailData);
+      if (!emailData.lead_id || !emailData.email || !emailData.subject || !emailData.body || !emailData.first_name) {
+        console.error('Invalid email data (missing required fields):', {
+          lead_id: emailData.lead_id,
+          email: emailData.email,
+          first_name: emailData.first_name,
+          email_stage: emailData.email_stage
+        });
+        rejectedEmails.push({
+          lead_id: emailData.lead_id,
+          reason: 'Missing required fields (email, first_name, subject, or body)'
+        });
         continue;
       }
       
@@ -227,11 +238,84 @@ app.post('/api/email-queue', async (req, res) => {
     
     res.json({
       success: true,
-      message: `${addedEmails.length} email(s) added to queue`,
-      emails: addedEmails
+      message: `${addedEmails.length} email(s) added to queue, ${rejectedEmails.length} rejected`,
+      emails: addedEmails,
+      rejected: rejectedEmails
     });
   } catch (error) {
     console.error('Error adding emails to queue:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Approve or decline email endpoint
+app.post('/api/emails/decision', async (req, res) => {
+  try {
+    const { lead_id, decision, email_data } = req.body;
+    
+    if (!lead_id || !decision) {
+      return res.status(400).json({
+        success: false,
+        error: 'lead_id and decision are required'
+      });
+    }
+
+    if (decision !== 'approve' && decision !== 'decline') {
+      return res.status(400).json({
+        success: false,
+        error: 'decision must be "approve" or "decline"'
+      });
+    }
+
+    // Remove email from queue completely
+    if (email_data && email_data.id) {
+      try {
+        await deleteEmailFromQueue(email_data.id);
+        console.log(`Email ${email_data.id} removed from queue (${decision}d)`);
+      } catch (dbError) {
+        console.error('Error removing email from queue:', dbError);
+        // Continue even if database deletion fails
+      }
+    }
+
+    console.log(`Email decision for lead ${lead_id}: ${decision}`);
+
+    // Send decision to n8n webhook
+    const n8nWebhookUrl = process.env.N8N_APPROVAL_WEBHOOK_URL || 'https://aigeneers.app.n8n.cloud/webhook/email-approval';
+    
+    try {
+      const response = await fetch(n8nWebhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lead_id,
+          decision,
+          email_data,
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to send decision to n8n: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Error sending decision to n8n:', error);
+      // Don't fail the request if n8n webhook fails
+    }
+
+    res.json({
+      success: true,
+      message: `Email ${decision}d successfully`,
+      lead_id,
+      decision
+    });
+  } catch (error) {
+    console.error('Error processing email decision:', error);
     res.status(500).json({
       success: false,
       error: error.message

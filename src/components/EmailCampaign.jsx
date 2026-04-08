@@ -6,6 +6,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
   const [lastRunResult, setLastRunResult] = useState(null);
   const [leadsCount, setLeadsCount] = useState(0);
   const [pendingEmails, setPendingEmails] = useState([]);
+  const [processingEmails, setProcessingEmails] = useState(0);
   
   // n8n webhook URL
   const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook-test/send-leads-mails';
@@ -16,9 +17,19 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
     fetchPendingEmails();
     
     // Poll for new emails every 5 seconds
-    const interval = setInterval(fetchPendingEmails, 5000);
+    const interval = setInterval(() => {
+      fetchPendingEmails();
+      // Clear processing indicator if no emails are being generated
+      if (processingEmails > 0 && pendingEmails.length === 0) {
+        // Check if we've been waiting too long (30 seconds)
+        const timeSinceStart = Date.now() - (window.campaignStartTime || 0);
+        if (timeSinceStart > 30000) {
+          setProcessingEmails(0);
+        }
+      }
+    }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [processingEmails, pendingEmails.length]);
 
   const fetchLeadsCount = async () => {
     try {
@@ -37,7 +48,13 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       const response = await fetch('http://localhost:3001/api/email-queue/pending');
       if (response.ok) {
         const data = await response.json();
-        setPendingEmails(data.emails || []);
+        const emails = data.emails || [];
+        setPendingEmails(emails);
+        
+        // If we have emails now, clear the processing indicator
+        if (emails.length > 0 && processingEmails > 0) {
+          setProcessingEmails(0);
+        }
       }
     } catch (error) {
       console.error('Error fetching pending emails:', error);
@@ -46,21 +63,38 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
 
   const handleApproveEmail = async (emailId) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/email-queue/${emailId}/approve`, {
-        method: 'POST'
+      // Find the email data
+      const email = pendingEmails.find(e => e.id === emailId);
+      if (!email) {
+        throw new Error('Email not found');
+      }
+
+      // Immediately remove from UI
+      setPendingEmails(prev => prev.filter(e => e.id !== emailId));
+
+      const response = await fetch('http://localhost:3001/api/emails/decision', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lead_id: email.lead_id,
+          decision: 'approve',
+          email_data: email
+        })
       });
       
       if (response.ok) {
-        // Refresh the pending emails list
-        await fetchPendingEmails();
         setLastRunResult({
           success: true,
-          message: 'Email approved successfully!',
+          message: 'Email approved and sent to n8n!',
           timestamp: new Date().toISOString()
         });
       }
     } catch (error) {
       console.error('Error approving email:', error);
+      // Re-fetch to restore state on error
+      await fetchPendingEmails();
       setLastRunResult({
         success: false,
         message: `Failed to approve email: ${error.message}`,
@@ -71,21 +105,38 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
 
   const handleDeclineEmail = async (emailId) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/email-queue/${emailId}/decline`, {
-        method: 'POST'
+      // Find the email data
+      const email = pendingEmails.find(e => e.id === emailId);
+      if (!email) {
+        throw new Error('Email not found');
+      }
+
+      // Immediately remove from UI
+      setPendingEmails(prev => prev.filter(e => e.id !== emailId));
+
+      const response = await fetch('http://localhost:3001/api/emails/decision', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lead_id: email.lead_id,
+          decision: 'decline',
+          email_data: email
+        })
       });
       
       if (response.ok) {
-        // Refresh the pending emails list
-        await fetchPendingEmails();
         setLastRunResult({
           success: true,
-          message: 'Email declined successfully!',
+          message: 'Email declined and notification sent to n8n!',
           timestamp: new Date().toISOString()
         });
       }
     } catch (error) {
       console.error('Error declining email:', error);
+      // Re-fetch to restore state on error
+      await fetchPendingEmails();
       setLastRunResult({
         success: false,
         message: `Failed to decline email: ${error.message}`,
@@ -110,6 +161,10 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       const leadsData = await leadsResponse.json();
       const leads = leadsData.leads || [];
       
+      // Set processing count and timestamp
+      setProcessingEmails(leads.length);
+      window.campaignStartTime = Date.now();
+      
       console.log(`Sending ${leads.length} leads to n8n workflow:`, N8N_WEBHOOK_URL);
       
       // Send leads to n8n webhook
@@ -131,7 +186,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
         console.log('n8n workflow triggered successfully:', data);
         setLastRunResult({
           success: true,
-          message: `Email campaign workflow started! Generated emails will appear in the queue below for review.`,
+          message: `Email campaign workflow started! AI is generating ${leads.length} personalized emails...`,
           timestamp: new Date().toISOString()
         });
         // Refresh pending emails after a short delay to allow n8n to process
@@ -146,6 +201,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
         message: `Failed to trigger workflow: ${error.message}`,
         timestamp: new Date().toISOString()
       });
+      setProcessingEmails(0);
     } finally {
       setIsSending(false);
     }
@@ -159,29 +215,21 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       </div>
 
       <div className="campaign-info">
-        <div className="info-card">
-          <h3>🤖 Automated Email Workflow</h3>
-          <p>This will trigger your n8n workflow that:</p>
-          <ul>
-            <li>Processes all leads from Pipedrive ({leadsCount} total)</li>
-            <li>Filters leads based on their current label (excludes "last_mail" and "answered")</li>
-            <li>Determines the next email stage for each lead</li>
-            <li>Uses AI to write personalized emails based on the stage</li>
-            <li>Adds emails to the queue for your review</li>
-            <li>Sends approved emails and updates lead labels</li>
-          </ul>
-        </div>
-
-        <div className="info-card">
-          <h3>📋 Email Stages</h3>
-          <ul>
-            <li><strong>no_label</strong> → first_mail (Introduction)</li>
-            <li><strong>first_mail</strong> → second_mail (Follow-up)</li>
-            <li><strong>second_mail</strong> → third_mail (Bump)</li>
-            <li><strong>third_mail</strong> → last_mail (Final goodbye)</li>
-            <li><strong>last_mail</strong> → Excluded from campaign</li>
-            <li><strong>answered</strong> → Excluded from campaign</li>
-          </ul>
+        <div className="workflow-summary">
+          <div className="summary-item">
+            <span className="summary-icon">🤖</span>
+            <div className="summary-content">
+              <strong>AI-Powered Workflow</strong>
+              <p>Processes {leadsCount} leads • Generates personalized emails • Updates labels automatically</p>
+            </div>
+          </div>
+          <div className="summary-item">
+            <span className="summary-icon">📋</span>
+            <div className="summary-content">
+              <strong>Email Stages</strong>
+              <p>Introduction → Follow-up → Bump → Final goodbye</p>
+            </div>
+          </div>
         </div>
 
         <div className="campaign-trigger">
@@ -210,11 +258,21 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
           </div>
         )}
 
+        {/* Processing indicator */}
+        {processingEmails > 0 && pendingEmails.length === 0 && (
+          <div className="processing-indicator">
+            <div className="spinner"></div>
+            <p>🤖 AI is generating {processingEmails} personalized emails...</p>
+          </div>
+        )}
+
         {/* Pending emails for review */}
         {pendingEmails.length > 0 && (
           <div className="pending-emails-container">
-            <h3>📬 Pending Emails for Review ({pendingEmails.length})</h3>
-            <p className="review-instructions">Review each email and approve or decline before sending.</p>
+            <div className="pending-header">
+              <h3>📬 Pending Emails ({pendingEmails.length})</h3>
+              <p>Review and approve emails before sending</p>
+            </div>
             
             <div className="emails-list">
               {pendingEmails.map((email) => (
@@ -254,22 +312,11 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
           </div>
         )}
 
-        {pendingEmails.length === 0 && (
+        {pendingEmails.length === 0 && processingEmails === 0 && (
           <div className="no-emails-message">
             <p>📭 No pending emails. Start a campaign to generate emails for review.</p>
           </div>
         )}
-
-        <div className="workflow-notes">
-          <h4>📝 Notes:</h4>
-          <ul>
-            <li>Generated emails are added to a queue for your review</li>
-            <li>Approve emails you want to send, decline those you don't</li>
-            <li>The page automatically refreshes every 5 seconds to show new emails</li>
-            <li>Lead labels will be automatically updated after sending approved emails</li>
-            <li>Declined emails are marked but not sent</li>
-          </ul>
-        </div>
       </div>
     </div>
   );
