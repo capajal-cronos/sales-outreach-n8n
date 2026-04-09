@@ -4,7 +4,7 @@
 This workflow receives a CSV/TXT/XLSX file with organization data and enriches it using Apollo.io's bulk_enrich API.
 
 ## Webhook Configuration
-- **URL**: `https://aigeneers.app.n8n.cloud/webhook-test/organizations-file`
+- **URL**: `https://aigeneers.app.n8n.cloud/webhook/organizations-file`
 - **Method**: POST
 - **Content-Type**: application/json
 
@@ -12,7 +12,7 @@ This workflow receives a CSV/TXT/XLSX file with organization data and enriches i
 
 ### 1. Webhook Node
 - **Type**: Webhook
-- **Path**: `/webhook-test/organizations-file`
+- **Path**: `/webhook/organizations-file`
 - **Method**: POST
 - **Response Mode**: Wait for response
 

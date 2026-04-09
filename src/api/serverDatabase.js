@@ -403,16 +403,35 @@ async function writeResponses(data) {
 
 export async function addResponse(responseData) {
   const responses = await readResponses();
+
+  // n8n IMAP node may send from as an object {address, name} or plain string
+  const fromRaw = responseData.from || '';
+  const from = typeof fromRaw === 'object'
+    ? (fromRaw.text || fromRaw.address || JSON.stringify(fromRaw))
+    : fromRaw;
+
+  // Body: try every field name n8n might use
+  const body = responseData.text
+    || responseData.body
+    || responseData.snippet
+    || responseData.message
+    || responseData.html
+    || responseData.textBody
+    || responseData.htmlBody
+    || '';
+
   const newResponse = {
     id: Date.now().toString() + Math.random().toString(36).substring(2, 11),
-    from: responseData.from || '',
+    from,
     subject: responseData.subject || '',
     date: responseData.date || new Date().toISOString(),
-    snippet: responseData.snippet || '',
+    body,
+    snippet: responseData.snippet || body.slice(0, 200),
     person_id: responseData.person_id || null,
     person_name: responseData.person_name || '',
     lead_id: responseData.lead_id || null,
     lead_title: responseData.lead_title || '',
+    original: responseData.original || '',
     received_at: new Date().toISOString()
   };
   responses.unshift(newResponse); // newest first

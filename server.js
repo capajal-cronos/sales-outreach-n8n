@@ -442,7 +442,9 @@ app.delete('/api/email-queue/status/:status', async (req, res) => {
 // n8n POSTs reply data here when it detects a reply via IMAP
 app.post('/api/responses', async (req, res) => {
   try {
-    const response = await addResponse(req.body);
+    const payload = Array.isArray(req.body) ? req.body[0] : req.body;
+    console.log('[responses] incoming payload keys:', Object.keys(payload));
+    const response = await addResponse(payload);
     res.json({ success: true, response });
   } catch (error) {
     console.error('Error storing response:', error);

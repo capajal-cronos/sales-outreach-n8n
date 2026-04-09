@@ -45,7 +45,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
-  const [pipedriveOrganizations, setPipedriveOrganizations] = useState([]);
+  const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
   const [dbOrganizations, setDbOrganizations] = useState([]);
   const [dbStats, setDbStats] = useState({ total: 0, processed: 0, unprocessed: 0, errors: 0 });
   const [industryTagsInput, setIndustryTagsInput] = useState('');
@@ -60,10 +60,10 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   const locationInputRef = useRef(null);
 
   // Get configuration from environment variables
-  const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL_MANUAL_ORGANIZATION;
-  const N8N_FILTERS_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL_FILTERS_ORGANIZATION || 'https://aigeneers.app.n8n.cloud/webhook-test/organization-filters';
-  const N8N_FILE_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook-test/organizations-file';
-  const N8N_APOLLO_ACCEPTED_URL = import.meta.env.VITE_N8N_APOLLO_ACCEPTED_URL || 'https://aigeneers.app.n8n.cloud/webhook-test/apollo-accepted-organizations';
+  const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL_MANUAL_ORGANIZATION || 'https://aigeneers.app.n8n.cloud/webhook/organizations';
+  const N8N_FILTERS_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL_FILTERS_ORGANIZATION || 'https://aigeneers.app.n8n.cloud/webhook/organization-filters';
+  const N8N_FILE_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook/organizations-file';
+  const N8N_APOLLO_ACCEPTED_URL = import.meta.env.VITE_N8N_APOLLO_ACCEPTED_URL || 'https://aigeneers.app.n8n.cloud/webhook/apollo-accepted-organizations';
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 
   // Initialize database and load organizations on mount
@@ -71,7 +71,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
     async function init() {
       await initDatabase();
       loadDbOrganizations();
-      fetchPipedriveOrganizations();
+      fetchPipedriveOrganizations(); // Always refresh in background
       loadApolloPendingOrgs();
     }
     init();
@@ -128,23 +128,16 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
   // Fetch organizations from Pipedrive and sync to database
   const fetchPipedriveOrganizations = async () => {
     try {
-      console.log('Fetching organizations from Pipedrive...');
-      
       // Fetch organizations with all fields
       const response = await fetch(
         `https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`
       );
-      
-      console.log('Pipedrive response status:', response.status);
-      
+
       if (response.ok) {
         const data = await response.json();
-        console.log('Pipedrive organizations data:', data);
-        
+
         if (data.success && data.data) {
-          console.log(`Found ${data.data.length} organizations in Pipedrive`);
-          
-          // Fetch detailed info for each organization to get website
+          // Fetch detailed info for each organization to get website + apollo_id
           const detailedOrgs = await Promise.all(
             data.data.map(async (org) => {
               try {
@@ -153,7 +146,10 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
                 );
                 if (detailResponse.ok) {
                   const detailData = await detailResponse.json();
-                  return detailData.success && detailData.data ? detailData.data : org;
+                  if (detailData.success && detailData.data) {
+                    const apolloId = detailData.data['596a7f23303e67be9328a9f09ce7f4979caf2c7f'];
+                    return { ...detailData.data, apollo_id: apolloId };
+                  }
                 }
               } catch (err) {
                 console.error(`Failed to fetch details for org ${org.id}:`, err);
@@ -161,17 +157,16 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
               return org;
             })
           );
-          
-          console.log('Setting Pipedrive organizations:', detailedOrgs.length);
+
           setPipedriveOrganizations(detailedOrgs);
           
           // Sync Pipedrive organizations to database
           await syncPipedriveToDatabase(detailedOrgs);
         } else {
-          console.log('No organizations data in response');
+          console.error('Pipedrive: no organizations data in response');
         }
       } else {
-        console.error('Pipedrive API error:', response.status, await response.text());
+        console.error('Pipedrive API error:', response.status);
       }
     } catch (err) {
       console.error('Failed to fetch Pipedrive organizations:', err);
@@ -237,17 +232,14 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
             (dbOrg.domain && pipedriveOrgDomains.has(dbOrg.domain));
           
           if (!existsInPipedrive) {
-            // Organization was deleted from Pipedrive, remove from database
             await deleteOrganization(dbOrg.id);
             deletedCount++;
-            console.log(`Removed organization "${dbOrg.name}" (deleted from Pipedrive)`);
           }
         }
       }
-      
+
       if (syncedCount > 0 || deletedCount > 0) {
-        console.log(`Sync complete: ${syncedCount} added, ${deletedCount} removed`);
-        await loadDbOrganizations(); // Reload database to show changes
+        await loadDbOrganizations();
       }
     } catch (err) {
       console.error('Failed to sync Pipedrive organizations to database:', err);
@@ -382,8 +374,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
           fileType: fileExtension
         };
         
-        console.log('Sending file to webhook:', N8N_FILE_WEBHOOK_URL);
-        console.log('File details:', { fileName: uploadedFile.name, fileType: fileExtension });
         
         // Send file content to dedicated file webhook
         const response = await fetch(N8N_FILE_WEBHOOK_URL, {
@@ -417,9 +407,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         
         // Save to database
         if (organizations.length > 0) {
-          const imported = await importOrganizations(organizations);
+          await importOrganizations(organizations);
           await loadDbOrganizations();
-          console.log(`Imported ${imported} new organizations to database`);
         }
         
         setIsLoading(false);
@@ -495,23 +484,16 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
           .filter(domain => domain)
       );
       
-      console.log(`Found ${existingDomains.size} existing organizations in database`);
-      
       // Fetch multiple pages to get more results
       const maxPages = searchParams.maxPages || 4;
       const perPage = searchParams.perPage || 25;
       let allOrganizations = [];
       let newOrganizations = [];
-      
+
       for (let page = 1; page <= maxPages; page++) {
-        console.log(`Fetching page ${page}/${maxPages}...`);
-        
         // Update page number in request body
         const pageRequestBody = { ...requestBody, page, per_page: perPage };
-        
-        console.log('Sending to webhook:', webhookUrl);
-        console.log('Request body:', JSON.stringify(pageRequestBody, null, 2));
-        
+
         const response = await fetch(webhookUrl, {
           method: 'POST',
           headers: {
@@ -521,15 +503,15 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         });
 
         if (!response.ok) {
-          console.error(`HTTP error on page ${page}! status: ${response.status}`);
-          break; // Stop fetching if we get an error
+          console.error(`Apollo search failed on page ${page}: HTTP ${response.status}`);
+          break;
         }
 
         const data = await response.json();
-        
+
         // Handle the response from n8n - be more flexible with response format
         let organizations = [];
-        
+
         if (data.organizations && Array.isArray(data.organizations)) {
           organizations = data.organizations;
         } else if (data.success && data.data) {
@@ -539,45 +521,36 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         } else if (data.success !== false) {
           organizations = data.data ? [data.data] : [];
         }
-        
-        console.log(`Page ${page}: Received ${organizations.length} organizations`);
-        
+
         // If no results on this page, stop fetching
         if (organizations.length === 0) {
-          console.log('No more results, stopping pagination');
           break;
         }
-        
+
         // Filter out organizations that already exist in database
         const pageNewOrgs = organizations.filter(org => {
           if (!org.domain) return true; // Keep if no domain to check
           const cleanedDomain = cleanDomain(org.domain);
           return !existingDomains.has(cleanedDomain);
         });
-        
-        console.log(`Page ${page}: ${pageNewOrgs.length} new organizations (${organizations.length - pageNewOrgs.length} duplicates skipped)`);
-        
+
         allOrganizations = allOrganizations.concat(organizations);
         newOrganizations = newOrganizations.concat(pageNewOrgs);
-        
+
         // If we got fewer results than perPage, we've reached the end
         if (organizations.length < perPage) {
-          console.log('Received fewer results than requested, stopping pagination');
           break;
         }
       }
-      
-      console.log(`Total: ${allOrganizations.length} organizations found, ${newOrganizations.length} are new`);
-      
+
+      console.log(`Search complete: ${allOrganizations.length} found, ${newOrganizations.length} new (${allOrganizations.length - newOrganizations.length} already in database)`);
+
       setSearchResults(newOrganizations);
-      
+
       // Save new organizations to database
       if (newOrganizations.length > 0) {
-        const imported = await importOrganizations(newOrganizations);
+        await importOrganizations(newOrganizations);
         await loadDbOrganizations();
-        console.log(`Imported ${imported} new organizations to database`);
-      } else {
-        console.log('No new organizations to import (all were duplicates)');
       }
       
     } catch (err) {

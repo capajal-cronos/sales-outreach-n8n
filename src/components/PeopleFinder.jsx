@@ -15,10 +15,10 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingPeople, setIsLoadingPeople] = useState(true);
+  const [isLoadingPeople, setIsLoadingPeople] = useState((workflowData.people || []).length === 0);
   const [searchResults, setSearchResults] = useState(workflowData.people || []);
-  const [pipedrivePersons, setPipedrivePersons] = useState([]);
-  const [pipedriveOrganizations, setPipedriveOrganizations] = useState([]);
+  const [pipedrivePersons, setPipedrivePersons] = useState(workflowData.people || []);
+  const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
   const [headlineModal, setHeadlineModal] = useState({ show: false, headline: '', name: '' });
   
   // Ref to prevent double fetching in StrictMode
@@ -31,8 +31,10 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
   useEffect(() => {
     if (!hasFetchedRef.current) {
       hasFetchedRef.current = true;
-      fetchPipedrivePersons();
-      fetchPipedriveOrganizations();
+      if ((workflowData.people || []).length === 0) {
+        fetchPipedrivePersons();
+      }
+      fetchPipedriveOrganizations(); // Always refresh — cached orgs may lack apollo_id
     }
   }, []);
 
@@ -111,13 +113,11 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
             return { ...person, headline, linkedin_url: linkedinUrl };
           }
         } else if (retries > 0) {
-          console.warn(`Retry ${3 - retries} for person ${person.id}`);
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       } catch (fetchErr) {
         clearTimeout(timeoutId);
         if (retries > 0) {
-          console.warn(`Fetch error, retrying for person ${person.id}:`, fetchErr.message);
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
@@ -138,27 +138,17 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
-          console.log(`Fetching details for ${data.data.length} persons...`);
-
           const BATCH_SIZE = 5;
           const BATCH_DELAY_MS = 600;
-          let successCount = 0;
-          let failCount = 0;
 
           for (let i = 0; i < data.data.length; i += BATCH_SIZE) {
             const batch = data.data.slice(i, i + BATCH_SIZE);
             const results = await Promise.all(batch.map(person => fetchPersonDetail(person)));
-
             setPipedrivePersons(prev => [...prev, ...results]);
-            successCount += results.filter(p => !p._detailFetchFailed).length;
-            failCount += results.filter(p => p._detailFetchFailed).length;
-
             if (i + BATCH_SIZE < data.data.length) {
               await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
             }
           }
-
-          console.log(`Finished fetching person details: ${successCount} successful, ${failCount} failed`);
         }
       }
     } catch (err) {
@@ -225,18 +215,17 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
     }
 
     setIsLoading(true);
-    console.log('🚀 Starting people search workflow...');
 
     try {
       // Get Apollo IDs from selected organizations
       const selectedOrgs = pipedriveOrganizations.filter(org =>
         searchParams.selectedOrganizations.includes(org.id)
       );
-      
+
       const apolloIds = selectedOrgs
         .map(org => org.apollo_id)
-        .filter(id => id); // Filter out undefined/null values
-      
+        .filter(id => id);
+
       if (apolloIds.length === 0) {
         alert('Selected organizations do not have Apollo IDs. Please ensure organizations are synced with Apollo.');
         setIsLoading(false);
@@ -247,128 +236,79 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
       const orgMapping = {};
       selectedOrgs.forEach(org => {
         if (org.apollo_id) {
-          orgMapping[org.apollo_id] = org.id; // Pipedrive ID
+          orgMapping[org.apollo_id] = org.id;
         }
       });
 
-      console.log(`Searching for people in ${apolloIds.length} organizations with Apollo IDs`);
-      console.log('Organization mapping:', orgMapping);
-
-      // Fetch multiple pages
       const maxPages = searchParams.maxPages || 4;
       const peoplePerCompany = searchParams.peoplePerCompany || 5;
-      // Calculate per_page based on number of companies and people per company
-      const perPage = Math.min(apolloIds.length * peoplePerCompany, 100); // Apollo max is 100
+      const perPage = Math.min(apolloIds.length * peoplePerCompany, 100);
       let allPeople = [];
 
-      console.log(`Requesting ${perPage} people per page (${apolloIds.length} companies × ${peoplePerCompany} people per company)`);
-
       for (let page = 1; page <= maxPages; page++) {
-        console.log(`Fetching page ${page}/${maxPages}...`);
-
-        // Build request body according to Apollo API format
         const requestBody = {
           organization_ids: apolloIds,
           pipedrive_org_mapping: orgMapping,
-          page: page,
+          page,
           per_page: perPage
         };
 
-        // Add optional filters if provided
-        if (searchParams.personTitles.length > 0) {
-          requestBody.person_titles = searchParams.personTitles;
-        }
-        if (searchParams.personSeniorities.length > 0) {
-          requestBody.person_seniorities = searchParams.personSeniorities;
-        }
-        if (searchParams.personDepartments.length > 0) {
-          requestBody.person_departments = searchParams.personDepartments;
-        }
-        if (searchParams.personLocations.length > 0) {
-          requestBody.person_locations = searchParams.personLocations;
-        }
-        if (searchParams.verifiedEmailOnly) {
-          requestBody.contact_email_status = ["verified"];
-        }
+        if (searchParams.personTitles.length > 0) requestBody.person_titles = searchParams.personTitles;
+        if (searchParams.personSeniorities.length > 0) requestBody.person_seniorities = searchParams.personSeniorities;
+        if (searchParams.personDepartments.length > 0) requestBody.person_departments = searchParams.personDepartments;
+        if (searchParams.personLocations.length > 0) requestBody.person_locations = searchParams.personLocations;
+        if (searchParams.verifiedEmailOnly) requestBody.contact_email_status = ['verified'];
 
-        console.log('Sending request body:', JSON.stringify(requestBody, null, 2));
-
-        const response = await fetch('https://aigeneers.app.n8n.cloud/webhook-test/find-people', {
+        const response = await fetch('https://aigeneers.app.n8n.cloud/webhook/find-people', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody)
         });
 
-        console.log('Response status:', response.status);
-
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`HTTP error on page ${page}! status: ${response.status}`);
-          console.error('Error response:', errorText);
+          console.error(`Find people failed on page ${page}: HTTP ${response.status}`);
           break;
         }
 
         const data = await response.json();
-        console.log('Raw response from n8n:', data);
-        
-        // Handle different response formats from Apollo
+
+        // Handle different response formats: Apollo uses "contacts" or "people",
+        // n8n may wrap items as [{json: {...}}], or return a flat array/object
         let people = [];
         if (data.people && Array.isArray(data.people)) {
           people = data.people;
+        } else if (data.contacts && Array.isArray(data.contacts)) {
+          people = data.contacts;
         } else if (data.success && data.data) {
           people = Array.isArray(data.data) ? data.data : [data.data];
         } else if (Array.isArray(data)) {
-          people = data;
+          // Unwrap n8n's [{json: {...}}] format if present, otherwise use as-is
+          people = data.map(item => (item && item.json ? item.json : item));
         }
 
-        console.log(`Page ${page}: Received ${people.length} people`);
-
-        if (people.length === 0) {
-          console.log('No more results, stopping pagination');
-          break;
-        }
+        if (people.length === 0) break;
 
         allPeople = allPeople.concat(people);
-
-        // If we got fewer results than perPage, we've reached the end
-        if (people.length < perPage) {
-          console.log('Received fewer results than requested, stopping pagination');
-          break;
-        }
+        if (people.length < perPage) break;
       }
 
-      console.log(`Total: ${allPeople.length} people found before limiting`);
-      
-      // Limit people per company (peoplePerCompany already declared above)
+      // Limit per company. When organization_id is absent, fall back to a slot
+      // called '__unknown__' so it still respects the per-company cap.
       const limitedPeople = [];
       const companyCount = {};
-      
+
       for (const person of allPeople) {
-        const orgId = person.organization_id || person.organization?.id;
-        if (!orgId) {
-          limitedPeople.push(person);
-          continue;
-        }
-        
-        if (!companyCount[orgId]) {
-          companyCount[orgId] = 0;
-        }
-        
+        const orgId = person.organization_id || person.organization?.id || '__unknown__';
+        companyCount[orgId] = companyCount[orgId] || 0;
         if (companyCount[orgId] < peoplePerCompany) {
           limitedPeople.push(person);
           companyCount[orgId]++;
         }
       }
-      
-      console.log(`After limiting to ${peoplePerCompany} per company: ${limitedPeople.length} people`);
-      
+
       setSearchResults(limitedPeople);
-      
-      // Success feedback
-      console.log('✅ People search workflow completed successfully!');
-      alert(`✅ Search complete! Found ${limitedPeople.length} people across ${apolloIds.length} companies.`);
+
+      alert(`Search complete: found ${limitedPeople.length} people across ${apolloIds.length} company(s).`);
     } catch (error) {
       console.error('❌ Error searching for people:', error);
       alert(`❌ Failed to search for people: ${error.message}`);

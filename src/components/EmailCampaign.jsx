@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import './EmailCampaign.css';
 
-function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious }) {
+function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious, campaignPendingLeads = {} }) {
   const [isSending, setIsSending] = useState(false);
   const [lastRunResult, setLastRunResult] = useState(null);
   const [leadsCount, setLeadsCount] = useState(0);
@@ -14,7 +14,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
   useEffect(() => { pendingEmailsLengthRef.current = pendingEmails.length; }, [pendingEmails.length]);
 
   // n8n webhook URL
-  const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook-test/send-leads-mails';
+  const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook/send-leads-mails';
 
   // Fetch leads count and pending emails on mount, then poll every 5 seconds
   useEffect(() => {
@@ -35,7 +35,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
 
   const fetchLeadsCount = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/leads?showAll=true');
+      const response = await fetch('http://localhost:3001/api/leads');
       if (response.ok) {
         const data = await response.json();
         setLeadsCount(data.count || 0);
@@ -150,7 +150,7 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
       console.log('Fetching leads from Pipedrive...');
       
       // First, fetch all leads from our API
-      const leadsResponse = await fetch('http://localhost:3001/api/leads?showAll=true');
+      const leadsResponse = await fetch('http://localhost:3001/api/leads');
       if (!leadsResponse.ok) {
         throw new Error('Failed to fetch leads from Pipedrive');
       }
@@ -255,11 +255,19 @@ function EmailCampaign({ workflowData, updateWorkflowData, onNext, onPrevious })
           </div>
         )}
 
-        {/* Processing indicator */}
+        {/* Processing indicator — from this tab's own trigger */}
         {processingEmails > 0 && pendingEmails.length === 0 && (
           <div className="processing-indicator">
             <div className="spinner"></div>
             <p>🤖 AI is generating {processingEmails} personalized emails...</p>
+          </div>
+        )}
+
+        {/* Processing indicator — from Manage Leads tab */}
+        {Object.keys(campaignPendingLeads).length > 0 && (
+          <div className="processing-indicator">
+            <div className="spinner"></div>
+            <p>🤖 AI is generating emails for {Object.keys(campaignPendingLeads).length} lead(s) selected in Manage Leads… Pending emails will appear below.</p>
           </div>
         )}
 
