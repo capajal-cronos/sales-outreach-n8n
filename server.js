@@ -29,6 +29,10 @@ import {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// In-memory workflow error log (survives until server restart)
+const workflowErrors = [];
+let errorIdCounter = 1;
+
 // Initialize Apollo pending database on startup
 await initializeApolloPending();
 
@@ -461,6 +465,51 @@ app.get('/api/responses', async (req, res) => {
     console.error('Error fetching responses:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// ============================================
+// WORKFLOW ERROR ENDPOINTS
+// ============================================
+
+// n8n POSTs errors here (e.g. out-of-credits, API failures)
+app.post('/api/workflow-errors', (req, res) => {
+  const { workflow, message, details } = req.body;
+  if (!workflow || !message) {
+    return res.status(400).json({ success: false, error: 'workflow and message are required' });
+  }
+  // Deduplicate: if the same workflow+message is already shown, just update the timestamp
+  const existing = workflowErrors.find(e => e.workflow === workflow && e.message === message);
+  if (existing) {
+    existing.timestamp = new Date().toISOString();
+    if (details) existing.details = details;
+    return res.json({ success: true, error: existing });
+  }
+  const error = {
+    id: errorIdCounter++,
+    workflow,
+    message,
+    details: details || null,
+    timestamp: new Date().toISOString()
+  };
+  workflowErrors.push(error);
+  console.error(`[workflow-error] ${workflow}: ${message}`);
+  res.json({ success: true, error });
+});
+
+// Frontend polls this to display errors
+app.get('/api/workflow-errors', (req, res) => {
+  res.json({ success: true, errors: workflowErrors, count: workflowErrors.length });
+});
+
+// Dismiss a specific error
+app.delete('/api/workflow-errors/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const idx = workflowErrors.findIndex(e => e.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, error: 'Error not found' });
+  }
+  workflowErrors.splice(idx, 1);
+  res.json({ success: true });
 });
 
 // Start server

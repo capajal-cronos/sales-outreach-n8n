@@ -93,6 +93,30 @@ function App() {
     });
   };
 
+  const [workflowErrors, setWorkflowErrors] = useState([]);
+
+  // Poll for workflow errors every 10 seconds
+  useEffect(() => {
+    const fetchErrors = async () => {
+      try {
+        const res = await fetch('http://localhost:3001/api/workflow-errors');
+        if (!res.ok) return;
+        const data = await res.json();
+        setWorkflowErrors(data.errors || []);
+      } catch (_) {}
+    };
+    fetchErrors();
+    const interval = setInterval(fetchErrors, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const dismissError = async (id) => {
+    try {
+      await fetch(`http://localhost:3001/api/workflow-errors/${id}`, { method: 'DELETE' });
+      setWorkflowErrors(prev => prev.filter(e => e.id !== id));
+    } catch (_) {}
+  };
+
   const steps = [
     { id: 1, name: 'Find Organizations', component: OrganizationSearch },
     { id: 2, name: 'Find People', component: PeopleFinder },
@@ -129,7 +153,7 @@ function App() {
         <p className="subtitle">Apollo → Pipedrive → Email Automation</p>
       </header>
 
-      <WorkflowProgress 
+      <WorkflowProgress
         steps={steps} 
         currentStep={currentStep} 
         onStepClick={goToStep}
@@ -145,6 +169,8 @@ function App() {
           campaignPendingLeads={campaignPendingLeads}
           onCampaignStarted={addCampaignPendingLeads}
           onCampaignDecided={removeCampaignPendingLeads}
+          workflowErrors={workflowErrors}
+          onDismissError={dismissError}
         />
       </main>
 

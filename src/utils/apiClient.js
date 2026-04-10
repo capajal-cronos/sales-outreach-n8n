@@ -44,14 +44,6 @@ export async function getAllOrganizations() {
 }
 
 /**
- * Get unprocessed organizations
- */
-export async function getUnprocessedOrganizations() {
-  const allOrgs = await getAllOrganizations();
-  return allOrgs.filter(org => !org.processed || org.processed === '');
-}
-
-/**
  * Add organization
  */
 export async function addOrganization(org) {
@@ -60,31 +52,6 @@ export async function addOrganization(org) {
     body: JSON.stringify(org),
   });
   return response.id;
-}
-
-/**
- * Update organization
- */
-export async function updateOrganization(id, updates) {
-  // For now, we'll get the org, update it, and send it back
-  // In a real app, you'd have a PATCH endpoint
-  const allOrgs = await getAllOrganizations();
-  const org = allOrgs.find(o => o.id === id);
-  
-  if (!org) {
-    throw new Error('Organization not found');
-  }
-
-  const updatedOrg = { ...org, ...updates };
-  
-  // Delete and re-add (simple approach)
-  await deleteOrganization(id);
-  await fetchAPI('/organizations', {
-    method: 'POST',
-    body: JSON.stringify(updatedOrg),
-  });
-  
-  return true;
 }
 
 /**
@@ -98,16 +65,6 @@ export async function deleteOrganization(id) {
 }
 
 /**
- * Check if organization exists by domain
- */
-export async function organizationExists(domain) {
-  if (!domain) return false;
-  
-  const allOrgs = await getAllOrganizations();
-  return allOrgs.some(org => org.domain === domain);
-}
-
-/**
  * Import organizations from file data
  */
 export async function importOrganizations(organizations) {
@@ -116,26 +73,6 @@ export async function importOrganizations(organizations) {
     body: JSON.stringify({ organizations }),
   });
   return response.imported || 0;
-}
-
-/**
- * Clear all organizations (not implemented on backend yet)
- */
-export async function clearAllOrganizations() {
-  const allOrgs = await getAllOrganizations();
-  
-  for (const org of allOrgs) {
-    await deleteOrganization(org.id);
-  }
-  
-  return true;
-}
-
-/**
- * Export database as JSON
- */
-export async function exportDatabaseAsJSON() {
-  return await getAllOrganizations();
 }
 
 /**

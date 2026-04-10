@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import './PeopleFinder.css';
 
-function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) {
+function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, workflowErrors = [], onDismissError }) {
   const [searchParams, setSearchParams] = useState({
     selectedOrganizations: [],
     personTitles: [],
@@ -15,7 +15,8 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingPeople, setIsLoadingPeople] = useState((workflowData.people || []).length === 0);
+  const [isLoadingPeople, setIsLoadingPeople] = useState(true);
+  const [searchStatus, setSearchStatus] = useState(null); // { type: 'success'|'error', message: string }
   const [searchResults, setSearchResults] = useState(workflowData.people || []);
   const [pipedrivePersons, setPipedrivePersons] = useState(workflowData.people || []);
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
@@ -31,9 +32,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
   useEffect(() => {
     if (!hasFetchedRef.current) {
       hasFetchedRef.current = true;
-      if ((workflowData.people || []).length === 0) {
-        fetchPipedrivePersons();
-      }
+      fetchPipedrivePersons(); // Always refresh — deletions in Pipedrive must be reflected
       fetchPipedriveOrganizations(); // Always refresh — cached orgs may lack apollo_id
     }
   }, []);
@@ -210,11 +209,12 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
 
   const handleSearch = async () => {
     if (searchParams.selectedOrganizations.length === 0) {
-      alert('Please select at least one organization');
+      setSearchStatus({ type: 'error', message: 'Please select at least one organization' });
       return;
     }
 
     setIsLoading(true);
+    setSearchStatus(null);
 
     try {
       // Get Apollo IDs from selected organizations
@@ -227,7 +227,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
         .filter(id => id);
 
       if (apolloIds.length === 0) {
-        alert('Selected organizations do not have Apollo IDs. Please ensure organizations are synced with Apollo.');
+        setSearchStatus({ type: 'error', message: 'Selected organizations do not have Apollo IDs. Please ensure organizations are synced with Apollo.' });
         setIsLoading(false);
         return;
       }
@@ -307,11 +307,13 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
       }
 
       setSearchResults(limitedPeople);
-
-      alert(`Search complete: found ${limitedPeople.length} people across ${apolloIds.length} company(s).`);
+      setSearchStatus({
+        type: 'success',
+        message: `Found ${limitedPeople.length} people across ${apolloIds.length} company(s).`
+      });
     } catch (error) {
       console.error('❌ Error searching for people:', error);
-      alert(`❌ Failed to search for people: ${error.message}`);
+      setSearchStatus({ type: 'error', message: `Failed to search for people: ${error.message}` });
       setSearchResults([]);
     } finally {
       setIsLoading(false);
@@ -320,7 +322,6 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
 
   const handleSaveToPipedrive = () => {
     updateWorkflowData('people', searchResults);
-    alert(`${searchResults.length} people saved to workflow data. Ready to create leads!`);
     onNext();
   };
 
@@ -588,6 +589,21 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious }) 
             </div>
 
             <div className="form-actions">
+              {workflowErrors.map(err => (
+                <div key={err.id} className="workflow-error-banner">
+                  <div className="workflow-error-content">
+                    <span className="workflow-error-label">{err.workflow}</span>
+                    <span className="workflow-error-message">{err.message}</span>
+                    {err.details && <span className="workflow-error-details">{err.details}</span>}
+                  </div>
+                  <button className="workflow-error-dismiss" onClick={() => onDismissError(err.id)} title="Dismiss">✕</button>
+                </div>
+              ))}
+              {searchStatus && (
+                <p className={`search-status search-status--${searchStatus.type}`}>
+                  {searchStatus.type === 'success' ? '✓' : '✕'} {searchStatus.message}
+                </p>
+              )}
               <button
                 className="btn btn-primary"
                 onClick={handleSearch}

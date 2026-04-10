@@ -9,7 +9,7 @@ import {
   getStatistics
 } from '../utils/apiClient';
 
-function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
+function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflowErrors = [], onDismissError }) {
   const [searchMode, setSearchMode] = useState('manual'); // 'manual', 'file', or 'filters'
   const [searchParams, setSearchParams] = useState({
     organizationName: '',
@@ -1360,7 +1360,17 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext }) {
         )}
 
         <div className="form-actions">
-          <button 
+          {workflowErrors.map(err => (
+            <div key={err.id} className="workflow-error-banner">
+              <div className="workflow-error-content">
+                <span className="workflow-error-label">{err.workflow}</span>
+                <span className="workflow-error-message">{err.message}</span>
+                {err.details && <span className="workflow-error-details">{err.details}</span>}
+              </div>
+              <button className="workflow-error-dismiss" onClick={() => onDismissError(err.id)} title="Dismiss">✕</button>
+            </div>
+          ))}
+          <button
             className="btn btn-primary"
             onClick={handleSearch}
             disabled={isLoading || (searchMode === 'file' && !uploadedFile)}
