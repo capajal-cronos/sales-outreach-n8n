@@ -135,59 +135,68 @@ app.get('/api/leads', async (req, res) => {
 
     const data = await response.json();
     
-    // Transform and filter Pipedrive leads
-    const allLeads = await Promise.all((data.data || []).map(async (lead) => {
-      let organizationName = lead.organization_name || '';
-      let personEmail = '';
-      
-      // If organization_id exists but no name, fetch it
-      if (lead.organization_id && !organizationName) {
-        try {
-          const orgResponse = await fetch(`https://api.pipedrive.com/v1/organizations/${lead.organization_id}?api_token=${PIPEDRIVE_API_KEY}`);
-          if (orgResponse.ok) {
-            const orgData = await orgResponse.json();
-            organizationName = orgData.data?.name || '';
+    // Enrich leads in small batches to avoid hitting Pipedrive rate limits
+    const rawLeads = data.data || [];
+    const BATCH_SIZE = 5;
+    const allLeads = [];
+
+    for (let i = 0; i < rawLeads.length; i += BATCH_SIZE) {
+      const batch = rawLeads.slice(i, i + BATCH_SIZE);
+      const enriched = await Promise.all(batch.map(async (lead) => {
+        let organizationName = lead.organization_name || '';
+        let personEmail = '';
+
+        // If organization_id exists but no name, fetch it
+        if (lead.organization_id && !organizationName) {
+          try {
+            const orgResponse = await fetch(`https://api.pipedrive.com/v1/organizations/${lead.organization_id}?api_token=${PIPEDRIVE_API_KEY}`);
+            if (orgResponse.ok) {
+              const orgData = await orgResponse.json();
+              organizationName = orgData.data?.name || '';
+            }
+          } catch (err) {
+            console.error(`Failed to fetch organization ${lead.organization_id}:`, err);
           }
-        } catch (err) {
-          console.error(`Failed to fetch organization ${lead.organization_id}:`, err);
         }
-      }
-      
-      // If person_id exists, fetch person details to get email
-      if (lead.person_id) {
-        try {
-          const personResponse = await fetch(`https://api.pipedrive.com/v1/persons/${lead.person_id}?api_token=${PIPEDRIVE_API_KEY}`);
-          if (personResponse.ok) {
-            const personData = await personResponse.json();
-            personEmail = personData.data?.email?.[0]?.value || '';
+
+        // person_id can be a plain integer or an object {value: id} depending on API version
+        const personId = lead.person_id?.value ?? lead.person_id;
+        if (personId) {
+          try {
+            const personResponse = await fetch(`https://api.pipedrive.com/v1/persons/${personId}?api_token=${PIPEDRIVE_API_KEY}`);
+            if (personResponse.ok) {
+              const personData = await personResponse.json();
+              personEmail = personData.data?.email?.[0]?.value || '';
+            }
+          } catch (err) {
+            console.error(`Failed to fetch person ${personId}:`, err);
           }
-        } catch (err) {
-          console.error(`Failed to fetch person ${lead.person_id}:`, err);
         }
-      }
-      
-      // Get label name
-      const labelId = lead.label_ids?.[0];
-      const labelName = labelId ? labelMapping[labelId] : 'no_label';
-      
-      return {
-        id: lead.id,
-        title: lead.title,
-        personId: lead.person_id,
-        personName: lead.person_name || '',
-        organizationId: lead.organization_id,
-        organization: organizationName,
-        value: lead.value?.amount || 0,
-        currency: lead.value?.currency || 'USD',
-        label: labelName,
-        label_ids: lead.label_ids || [],
-        email: personEmail || lead.person?.email?.[0]?.value || '',
-        phone: lead.person?.phone?.[0]?.value || '',
-        createdAt: lead.add_time,
-        updatedAt: lead.update_time,
-        ownerId: lead.owner_id
-      };
-    }));
+
+        // Get label name
+        const labelId = lead.label_ids?.[0];
+        const labelName = labelId ? labelMapping[labelId] : 'no_label';
+
+        return {
+          id: lead.id,
+          title: lead.title,
+          personId: personId || null,
+          personName: lead.person_name || '',
+          organizationId: lead.organization_id,
+          organization: organizationName,
+          value: lead.value?.amount || 0,
+          currency: lead.value?.currency || 'USD',
+          label: labelName,
+          label_ids: lead.label_ids || [],
+          email: personEmail || '',
+          phone: '',
+          createdAt: lead.add_time,
+          updatedAt: lead.update_time,
+          ownerId: lead.owner_id
+        };
+      }));
+      allLeads.push(...enriched);
+    }
 
     // Filter out leads with "answered" or "last_mail" labels (skip when showAll=true)
     const filteredLeads = skipFilter ? allLeads : allLeads.filter(lead => {

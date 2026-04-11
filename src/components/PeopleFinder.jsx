@@ -16,12 +16,16 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
 
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingPeople, setIsLoadingPeople] = useState(true);
-  const [searchStatus, setSearchStatus] = useState(null); // { type: 'success'|'error', message: string }
+  const [searchStatus, setSearchStatus] = useState(null); // { type: 'error', message: string }
   const [searchResults, setSearchResults] = useState(workflowData.people || []);
   const [pipedrivePersons, setPipedrivePersons] = useState(workflowData.people || []);
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
   const [headlineModal, setHeadlineModal] = useState({ show: false, headline: '', name: '' });
-  
+  const [foundPeopleModal, setFoundPeopleModal] = useState({ show: false, people: [] });
+  const [currentOrgMapping, setCurrentOrgMapping] = useState({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [selectedPeople, setSelectedPeople] = useState(new Set());
+
   // Ref to prevent double fetching in StrictMode
   const hasFetchedRef = useRef(false);
 
@@ -240,56 +244,43 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         }
       });
 
-      const maxPages = searchParams.maxPages || 4;
       const peoplePerCompany = searchParams.peoplePerCompany || 5;
       const perPage = Math.min(apolloIds.length * peoplePerCompany, 100);
+
+      const requestBody = {
+        organization_ids: apolloIds,
+        pipedrive_org_mapping: orgMapping,
+        page: 1,
+        per_page: perPage
+      };
+
+      if (searchParams.personTitles.length > 0) requestBody.person_titles = searchParams.personTitles;
+      if (searchParams.personSeniorities.length > 0) requestBody.person_seniorities = searchParams.personSeniorities;
+      if (searchParams.personDepartments.length > 0) requestBody.person_departments = searchParams.personDepartments;
+      if (searchParams.personLocations.length > 0) requestBody.person_locations = searchParams.personLocations;
+      if (searchParams.verifiedEmailOnly) requestBody.contact_email_status = ['verified'];
+
+      const response = await fetch('https://aigeneers.app.n8n.cloud/webhook/find-people', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
       let allPeople = [];
-
-      for (let page = 1; page <= maxPages; page++) {
-        const requestBody = {
-          organization_ids: apolloIds,
-          pipedrive_org_mapping: orgMapping,
-          page,
-          per_page: perPage
-        };
-
-        if (searchParams.personTitles.length > 0) requestBody.person_titles = searchParams.personTitles;
-        if (searchParams.personSeniorities.length > 0) requestBody.person_seniorities = searchParams.personSeniorities;
-        if (searchParams.personDepartments.length > 0) requestBody.person_departments = searchParams.personDepartments;
-        if (searchParams.personLocations.length > 0) requestBody.person_locations = searchParams.personLocations;
-        if (searchParams.verifiedEmailOnly) requestBody.contact_email_status = ['verified'];
-
-        const response = await fetch('https://aigeneers.app.n8n.cloud/webhook/find-people', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-          console.error(`Find people failed on page ${page}: HTTP ${response.status}`);
-          break;
-        }
-
-        const data = await response.json();
-
-        // Handle different response formats: Apollo uses "contacts" or "people",
-        // n8n may wrap items as [{json: {...}}], or return a flat array/object
-        let people = [];
-        if (data.people && Array.isArray(data.people)) {
-          people = data.people;
-        } else if (data.contacts && Array.isArray(data.contacts)) {
-          people = data.contacts;
-        } else if (data.success && data.data) {
-          people = Array.isArray(data.data) ? data.data : [data.data];
-        } else if (Array.isArray(data)) {
-          // Unwrap n8n's [{json: {...}}] format if present, otherwise use as-is
-          people = data.map(item => (item && item.json ? item.json : item));
-        }
-
-        if (people.length === 0) break;
-
-        allPeople = allPeople.concat(people);
-        if (people.length < perPage) break;
+      if (data.people && Array.isArray(data.people)) {
+        allPeople = data.people;
+      } else if (data.contacts && Array.isArray(data.contacts)) {
+        allPeople = data.contacts;
+      } else if (data.success && data.data) {
+        allPeople = Array.isArray(data.data) ? data.data : [data.data];
+      } else if (Array.isArray(data)) {
+        allPeople = data.map(item => (item && item.json ? item.json : item));
       }
 
       // Limit per company. When organization_id is absent, fall back to a slot
@@ -307,10 +298,11 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
       }
 
       setSearchResults(limitedPeople);
-      setSearchStatus({
-        type: 'success',
-        message: `Found ${limitedPeople.length} people across ${apolloIds.length} company(s).`
-      });
+      setCurrentOrgMapping(orgMapping);
+      if (limitedPeople.length > 0) {
+        setSelectedPeople(new Set(limitedPeople.map((p, i) => p.id || `idx-${i}`)));
+        setFoundPeopleModal({ show: true, people: limitedPeople });
+      }
     } catch (error) {
       console.error('❌ Error searching for people:', error);
       setSearchStatus({ type: 'error', message: `Failed to search for people: ${error.message}` });
@@ -323,6 +315,40 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   const handleSaveToPipedrive = () => {
     updateWorkflowData('people', searchResults);
     onNext();
+  };
+
+  const togglePersonSelection = (key) => {
+    setSelectedPeople(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const selectAllFoundPeople = () => {
+    setSelectedPeople(new Set(foundPeopleModal.people.map((p, i) => p.id || `idx-${i}`)));
+  };
+
+  const deselectAllFoundPeople = () => {
+    setSelectedPeople(new Set());
+  };
+
+  const handleSaveFoundPeople = async () => {
+    const peopleToSave = foundPeopleModal.people.filter((p, i) => selectedPeople.has(p.id || `idx-${i}`));
+    if (peopleToSave.length === 0) return;
+    setIsSaving(true);
+    try {
+      await fetch('https://aigeneers.app.n8n.cloud/webhook/save-people', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ people: peopleToSave, pipedrive_org_mapping: currentOrgMapping })
+      });
+      setFoundPeopleModal({ show: false, people: [] });
+      await fetchPipedrivePersons();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleRemovePerson = (id) => {
@@ -613,6 +639,107 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
               </button>
             </div>
           </div>
+
+      {/* Found People Modal */}
+      {foundPeopleModal.show && foundPeopleModal.people.length > 0 && (
+        <div className="modal-overlay" onClick={() => setFoundPeopleModal({ show: false, people: [] })}>
+          <div className="modal-content" style={{ maxWidth: '900px', width: '90%', height: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Found {foundPeopleModal.people.length} people</h3>
+              <button className="modal-close" onClick={() => setFoundPeopleModal({ show: false, people: [] })}>
+                ✕
+              </button>
+            </div>
+            <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
+              <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
+                Select people to save to Pipedrive.
+              </p>
+              <table className="pipedrive-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        title={selectedPeople.size === foundPeopleModal.people.length ? 'Deselect all' : 'Select all'}
+                        checked={selectedPeople.size === foundPeopleModal.people.length && foundPeopleModal.people.length > 0}
+                        onChange={e => e.target.checked ? selectAllFoundPeople() : deselectAllFoundPeople()}
+                        style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                      />
+                    </th>
+                    <th>Name</th>
+                    <th>Title / Headline</th>
+                    <th>Email</th>
+                    <th>LinkedIn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {foundPeopleModal.people.map((person, idx) => {
+                    const key = person.id || `idx-${idx}`;
+                    const isSelected = selectedPeople.has(key);
+                    const headline = person.headline || person.title || '';
+                    const truncated = headline.length > 60 ? headline.substring(0, 60) + '…' : headline;
+                    const linkedin = person.linkedin_url || '';
+                    return (
+                      <tr
+                        key={key}
+                        style={{ cursor: 'pointer', opacity: isSelected ? 1 : 0.45 }}
+                        onClick={() => togglePersonSelection(key)}
+                      >
+                        <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => togglePersonSelection(key)}
+                            style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                          />
+                        </td>
+                        <td><strong>{person.name || '-'}</strong></td>
+                        <td style={{ fontSize: '0.9em', color: '#555' }}>
+                          {headline.length > 60 ? (
+                            <span
+                              style={{ cursor: 'pointer', color: 'var(--primary-color)' }}
+                              onClick={e => { e.stopPropagation(); setHeadlineModal({ show: true, headline, name: person.name }); }}
+                              title="Click to read full headline"
+                            >
+                              {truncated}
+                            </span>
+                          ) : (truncated || '-')}
+                        </td>
+                        <td style={{ fontSize: '0.9em' }}>{person.email || '-'}</td>
+                        <td>
+                          {linkedin ? (
+                            <a
+                              href={linkedin.startsWith('http') ? linkedin : `https://${linkedin}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              LinkedIn
+                            </a>
+                          ) : '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '1rem 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>
+                {selectedPeople.size} of {foundPeopleModal.people.length} selected
+              </span>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button className="btn btn-secondary" onClick={() => setFoundPeopleModal({ show: false, people: [] })}>
+                  Decline All
+                </button>
+                <button className="btn btn-primary" onClick={handleSaveFoundPeople} disabled={isSaving || selectedPeople.size === 0}>
+                  {isSaving ? 'Saving...' : `Accept ${selectedPeople.size === foundPeopleModal.people.length ? 'All' : `${selectedPeople.size}`}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Headline Modal */}
       {headlineModal.show && (

@@ -299,7 +299,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                           {labelName}
                         </span>
                       </td>
-                      <td>{timeAgo(lead.updatedAt)}</td>
+                      <td>{(!lead.label || lead.label === 'no_label') ? 'Not contacted yet' : timeAgo(lead.updatedAt)}</td>
                     </tr>
                   );
                 })}
