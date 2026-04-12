@@ -3,7 +3,14 @@ import {
   updateOrganization,
   organizationExists,
   getAllOrganizations,
-  getOrganizationByDomain
+  getOrganizationByDomain,
+  getOrganizationById,
+  getStatistics,
+  deleteOrganization,
+  storeApolloResults,
+  getPendingApolloOrganizations,
+  processApolloDecisions,
+  clearApolloPending
 } from './serverDatabase.js';
 
 /**
@@ -102,7 +109,6 @@ export async function handleOrganizationSuccess(req, res) {
     }
 
     // Find organization
-    const { getOrganizationById } = await import('./serverDatabase.js');
     let org = id
       ? await getOrganizationById(id)
       : await getOrganizationByDomain(domain);
@@ -179,7 +185,6 @@ export async function handleGetAllOrganizations(req, res) {
  */
 export async function handleGetStatistics(req, res) {
   try {
-    const { getStatistics } = await import('./serverDatabase.js');
     const stats = await getStatistics();
     
     return res.status(200).json({
@@ -310,7 +315,6 @@ export async function handleDeleteOrganization(req, res) {
       });
     }
 
-    const { deleteOrganization } = await import('./serverDatabase.js');
     await deleteOrganization(id);
 
     return res.status(200).json({
@@ -344,9 +348,6 @@ export async function handleDeleteOrganization(req, res) {
  */
 export async function handleApolloSearchResults(req, res) {
   try {
-    console.log('Received Apollo results:', JSON.stringify(req.body, null, 2));
-    console.log('Request body type:', typeof req.body);
-    
     let apolloOrgs;
     let bodyData = req.body;
     let searchQuery = null;
@@ -355,8 +356,7 @@ export async function handleApolloSearchResults(req, res) {
     if (typeof bodyData === 'string') {
       try {
         bodyData = JSON.parse(bodyData);
-        console.log('Parsed string body to object');
-      } catch (e) {
+} catch (e) {
         console.error('Failed to parse string body:', e);
       }
     }
@@ -366,22 +366,16 @@ export async function handleApolloSearchResults(req, res) {
       // Format: { organizations: [...] }
       apolloOrgs = bodyData.organizations;
       searchQuery = bodyData.searchQuery || bodyData.query;
-      console.log(`Extracted ${apolloOrgs.length} organizations from wrapper`);
     } else if (Array.isArray(bodyData)) {
       // Format: [...]
       apolloOrgs = bodyData;
-      console.log(`Received ${apolloOrgs.length} organizations as array`);
     } else {
       // Format: single object
       apolloOrgs = [bodyData];
-      console.log('Received single organization object');
     }
     
     // Handle empty results - add a "not found" record to database
     if (apolloOrgs.length === 0) {
-      console.log('No organizations found, adding "not found" record');
-      const { addOrganization } = await import('./serverDatabase.js');
-      
       // Try to extract search info from various possible locations
       let searchName = 'Unknown search';
       if (searchQuery) {
@@ -433,7 +427,6 @@ export async function handleApolloSearchResults(req, res) {
     }
 
     // Store in a temporary table/collection for review
-    const { storeApolloResults } = await import('./serverDatabase.js');
     const stored = await storeApolloResults(apolloOrgs);
 
     return res.status(201).json({
@@ -456,7 +449,6 @@ export async function handleApolloSearchResults(req, res) {
  */
 export async function handleGetPendingApolloOrgs(req, res) {
   try {
-    const { getPendingApolloOrganizations } = await import('./serverDatabase.js');
     const pendingOrgs = await getPendingApolloOrganizations();
     
     return res.status(200).json({
@@ -495,7 +487,6 @@ export async function handleApolloDecisions(req, res) {
       });
     }
 
-    const { processApolloDecisions } = await import('./serverDatabase.js');
     const result = await processApolloDecisions(decisions);
 
     return res.status(200).json({
@@ -520,7 +511,6 @@ export async function handleApolloDecisions(req, res) {
  */
 export async function handleClearApolloPending(req, res) {
   try {
-    const { clearApolloPending } = await import('./serverDatabase.js');
     await clearApolloPending();
     
     return res.status(200).json({

@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import './OrganizationSearch.css';
 import {
-  initDatabase,
   getAllOrganizations,
   addOrganization,
   deleteOrganization,
@@ -69,7 +68,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   // Initialize database and load organizations on mount
   useEffect(() => {
     async function init() {
-      await initDatabase();
       loadDbOrganizations();
       fetchPipedriveOrganizations(); // Always refresh in background
       loadApolloPendingOrgs();

@@ -1,30 +1,20 @@
 import './WorkflowProgress.css';
 
 function WorkflowProgress({ steps, currentStep, onStepClick, workflowData }) {
+  const counts = {
+    1: workflowData.organizations?.length || 0,
+    2: workflowData.people?.length || 0,
+    3: workflowData.leads?.length || 0,
+    4: workflowData.campaigns?.length || 0
+  };
+
   const getStepStatus = (stepId) => {
     if (stepId === currentStep) return 'active';
-    // Check if step has data to mark as completed
-    const counts = {
-      1: workflowData.organizations?.length || 0,
-      2: workflowData.people?.length || 0,
-      3: workflowData.leads?.length || 0,
-      4: workflowData.campaigns?.length || 0,
-      5: workflowData.responses?.length || 0
-    };
     if (counts[stepId] > 0) return 'completed';
     return 'pending';
   };
 
-  const getStepCount = (stepId) => {
-    const counts = {
-      1: workflowData.organizations?.length || 0,
-      2: workflowData.people?.length || 0,
-      3: workflowData.leads?.length || 0,
-      4: workflowData.campaigns?.length || 0,
-      5: workflowData.responses?.length || 0
-    };
-    return counts[stepId];
-  };
+  const getStepCount = (stepId) => counts[stepId];
 
   return (
     <div className="workflow-progress">

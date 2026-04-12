@@ -7,6 +7,7 @@ import ResponseMonitor from './components/ResponseMonitor';
 import WorkflowProgress from './components/WorkflowProgress';
 
 const CAMPAIGN_TIMEOUT_MS = 10 * 60 * 1000;
+const GRACE_MS = 45000; // 45s — enough time for n8n to generate and queue the email
 
 function App() {
   const [currentStep, setCurrentStep] = useState(() => {
@@ -49,7 +50,6 @@ function App() {
 
   // Poll queue while there are pending leads.
   // Emails are DELETED on approve/decline, so check "no pending email + grace period passed" instead of status.
-  const GRACE_MS = 45000; // 45s — enough time for n8n to generate and queue the email
   useEffect(() => {
     if (Object.keys(campaignPendingLeads).length === 0) return;
     const interval = setInterval(async () => {
@@ -109,6 +109,21 @@ function App() {
     const interval = setInterval(fetchErrors, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  // When an error arrives for a specific lead, unblock it immediately
+  useEffect(() => {
+    const errorLeadIds = workflowErrors
+      .filter(e => e.lead_id)
+      .map(e => e.lead_id);
+    if (errorLeadIds.length === 0) return;
+    setCampaignPendingLeads(prev => {
+      const hasAny = errorLeadIds.some(id => id in prev);
+      if (!hasAny) return prev;
+      const next = { ...prev };
+      errorLeadIds.forEach(id => delete next[id]);
+      return next;
+    });
+  }, [workflowErrors]);
 
   const dismissError = async (id) => {
     try {
@@ -174,9 +189,6 @@ function App() {
         />
       </main>
 
-      <footer className="app-footer">
-        
-      </footer>
     </div>
   );
 }

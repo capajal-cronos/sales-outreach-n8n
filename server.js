@@ -204,8 +204,6 @@ app.get('/api/leads', async (req, res) => {
       return label !== 'answered' && label !== 'last_mail' && label !== 'last mail';
     });
 
-    console.log(`Total leads: ${allLeads.length}, Filtered leads (excluding answered/last_mail): ${filteredLeads.length}`);
-
     res.json({
       success: true,
       leads: filteredLeads,
@@ -291,17 +289,18 @@ app.post('/api/emails/decision', async (req, res) => {
     if (email_data && email_data.id) {
       try {
         await deleteEmailFromQueue(email_data.id);
-        console.log(`Email ${email_data.id} removed from queue (${decision}d)`);
       } catch (dbError) {
         console.error('Error removing email from queue:', dbError);
         // Continue even if database deletion fails
       }
     }
 
-    console.log(`Email decision for lead ${lead_id}: ${decision}`);
-
     // Send decision to n8n webhook
-    const n8nWebhookUrl = process.env.N8N_APPROVAL_WEBHOOK_URL || 'https://aigeneers.app.n8n.cloud/webhook/email-approval';
+    const n8nWebhookUrl = process.env.N8N_APPROVAL_WEBHOOK_URL;
+    if (!n8nWebhookUrl) {
+      console.error('N8N_APPROVAL_WEBHOOK_URL not configured');
+      return res.status(500).json({ success: false, error: 'N8N webhook not configured' });
+    }
     
     try {
       const response = await fetch(n8nWebhookUrl, {
@@ -370,42 +369,6 @@ app.get('/api/email-queue', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching emails:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Approve email
-app.post('/api/email-queue/:id/approve', async (req, res) => {
-  try {
-    const email = await updateEmailStatus(req.params.id, 'approved', 'approve');
-    res.json({
-      success: true,
-      message: 'Email approved',
-      email
-    });
-  } catch (error) {
-    console.error('Error approving email:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Decline email
-app.post('/api/email-queue/:id/decline', async (req, res) => {
-  try {
-    const email = await updateEmailStatus(req.params.id, 'declined', 'decline');
-    res.json({
-      success: true,
-      message: 'Email declined',
-      email
-    });
-  } catch (error) {
-    console.error('Error declining email:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -482,7 +445,7 @@ app.get('/api/responses', async (req, res) => {
 
 // n8n POSTs errors here (e.g. out-of-credits, API failures)
 app.post('/api/workflow-errors', (req, res) => {
-  const { workflow, message, details } = req.body;
+  const { workflow, message, details, lead_id } = req.body;
   if (!workflow || !message) {
     return res.status(400).json({ success: false, error: 'workflow and message are required' });
   }
@@ -498,6 +461,7 @@ app.post('/api/workflow-errors', (req, res) => {
     workflow,
     message,
     details: details || null,
+    lead_id: lead_id || null,
     timestamp: new Date().toISOString()
   };
   workflowErrors.push(error);
@@ -538,8 +502,7 @@ app.listen(PORT, () => {
   console.log(`   POST http://localhost:${PORT}/api/email-queue - Add email(s) to queue (n8n)`);
   console.log(`   GET  http://localhost:${PORT}/api/email-queue/pending - Get pending emails`);
   console.log(`   GET  http://localhost:${PORT}/api/email-queue?status=X - Get emails by status`);
-  console.log(`   POST http://localhost:${PORT}/api/email-queue/:id/approve - Approve email`);
-  console.log(`   POST http://localhost:${PORT}/api/email-queue/:id/decline - Decline email`);
+  console.log(`   POST http://localhost:${PORT}/api/emails/decision - Approve or decline email`);
   console.log(`   DEL  http://localhost:${PORT}/api/email-queue/:id - Delete email`);
   console.log(`📋 GET  http://localhost:${PORT}/api/leads - Get leads from Pipedrive`);
   console.log(`🧹 DEL  http://localhost:${PORT}/api/apollo/pending - Clear Apollo pending queue`);

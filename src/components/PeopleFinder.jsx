@@ -17,7 +17,6 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingPeople, setIsLoadingPeople] = useState(true);
   const [searchStatus, setSearchStatus] = useState(null); // { type: 'error', message: string }
-  const [searchResults, setSearchResults] = useState(workflowData.people || []);
   const [pipedrivePersons, setPipedrivePersons] = useState(workflowData.people || []);
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
   const [headlineModal, setHeadlineModal] = useState({ show: false, headline: '', name: '' });
@@ -297,7 +296,6 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         }
       }
 
-      setSearchResults(limitedPeople);
       setCurrentOrgMapping(orgMapping);
       if (limitedPeople.length > 0) {
         setSelectedPeople(new Set(limitedPeople.map((p, i) => p.id || `idx-${i}`)));
@@ -306,15 +304,9 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
     } catch (error) {
       console.error('❌ Error searching for people:', error);
       setSearchStatus({ type: 'error', message: `Failed to search for people: ${error.message}` });
-      setSearchResults([]);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleSaveToPipedrive = () => {
-    updateWorkflowData('people', searchResults);
-    onNext();
   };
 
   const togglePersonSelection = (key) => {
@@ -349,10 +341,6 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const handleRemovePerson = (id) => {
-    setSearchResults(prev => prev.filter(person => person.id !== id));
   };
 
   const selectAllOrganizations = () => {

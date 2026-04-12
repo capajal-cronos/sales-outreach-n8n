@@ -14,7 +14,7 @@ function timeAgo(dateStr) {
   return `${days}d ago`;
 }
 
-function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, campaignPendingLeads = {}, onCampaignStarted, onCampaignDecided }) {
+function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, campaignPendingLeads = {}, onCampaignStarted, onCampaignDecided, workflowErrors = [], onDismissError }) {
   const [leads, setLeads] = useState(workflowData.leads || []);
   const [filter, setFilter] = useState('all');
   const [isLoading, setIsLoading] = useState((workflowData.leads || []).length === 0);
@@ -24,6 +24,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   const [actionResult, setActionResult] = useState(null);
   const [labelMapping, setLabelMapping] = useState({});
   const [pendingEmails, setPendingEmails] = useState([]);
+  const [editingEmail, setEditingEmail] = useState(null); // { ...email, editSubject, editBody }
   const hasFetchedRef = useRef(false);
 
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
@@ -100,7 +101,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
 
   const filteredLeads = filter === 'all'
     ? leads
-    : leads.filter(l => (l.label_ids || []).includes(filter));
+    : leads.filter(l => (l.label_ids || []).some(id => String(id) === filter));
 
   const eligibleLeads = leads.filter(l => !isExcluded(l));
 
@@ -160,10 +161,35 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
     fetchPendingEmails();
   };
 
-  const handleDeclineEmail = async (emailId) => {
+  const handleDeclineEmail = (emailId) => {
     const email = pendingEmails.find(e => e.id === emailId);
     if (!email) return;
-    setPendingEmails(prev => prev.filter(e => e.id !== emailId));
+    setEditingEmail({ ...email, editSubject: email.subject, editBody: email.body });
+  };
+
+  const handleSendEdited = async () => {
+    if (!editingEmail) return;
+    const email = editingEmail;
+    setEditingEmail(null);
+    setPendingEmails(prev => prev.filter(e => e.id !== email.id));
+    onCampaignDecided?.([email.lead_id]);
+    await fetch('http://localhost:3001/api/emails/decision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lead_id: email.lead_id,
+        decision: 'approve',
+        email_data: { ...email, subject: email.editSubject, body: email.editBody }
+      })
+    });
+    fetchPendingEmails();
+  };
+
+  const handleDiscardEmail = async () => {
+    if (!editingEmail) return;
+    const email = editingEmail;
+    setEditingEmail(null);
+    setPendingEmails(prev => prev.filter(e => e.id !== email.id));
     onCampaignDecided?.([email.lead_id]);
     await fetch('http://localhost:3001/api/emails/decision', {
       method: 'POST',
@@ -177,9 +203,11 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
     if (selectedLeads.length === 0) return;
     if (!confirm(`Delete ${selectedLeads.length} lead(s) from Pipedrive?`)) return;
     setIsDeleting(true);
-    for (const id of selectedLeads) {
-      await fetch(`https://api.pipedrive.com/v1/leads/${id}?api_token=${PIPEDRIVE_API_KEY}`, { method: 'DELETE' });
-    }
+    await Promise.all(
+      selectedLeads.map(id =>
+        fetch(`https://api.pipedrive.com/v1/leads/${id}?api_token=${PIPEDRIVE_API_KEY}`, { method: 'DELETE' })
+      )
+    );
     setSelectedLeads([]);
     await fetchLeads();
     setIsDeleting(false);
@@ -195,6 +223,21 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
         <h2>📊 Leads & Campaign</h2>
         <p>Select leads to run a campaign, then review and approve generated emails below</p>
       </div>
+
+      {workflowErrors.length > 0 && (
+        <div className="workflow-errors-container">
+          {workflowErrors.map(err => (
+            <div key={err.id} className="workflow-error-banner">
+              <div className="workflow-error-content">
+                <span className="workflow-error-label">{err.workflow}</span>
+                <span className="workflow-error-message">{err.message}</span>
+                {err.details && <span className="workflow-error-details">{err.details}</span>}
+              </div>
+              <button className="workflow-error-dismiss" onClick={() => onDismissError(err.id)} title="Dismiss">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="empty-state"><p>⏳ Loading leads...</p></div>
@@ -323,26 +366,64 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                 <p>Review and approve before sending</p>
               </div>
               <div className="emails-list">
-                {pendingEmails.map(email => (
-                  <div key={email.id} className="email-card pending">
-                    <div className="email-header">
-                      <span className="email-stage">{email.email_stage}</span>
-                      <span className="email-time">{new Date(email.created_at).toLocaleString()}</span>
-                    </div>
-                    <div className="email-details">
-                      <p><strong>To:</strong> {email.first_name} ({email.email})</p>
-                      <p><strong>Subject:</strong> {email.subject}</p>
-                      <div className="email-body">
-                        <strong>Body:</strong>
-                        <pre>{email.body}</pre>
+                {pendingEmails.map(email => {
+                  const isEditing = editingEmail?.id === email.id;
+                  return (
+                    <div key={email.id} className={`email-card pending${isEditing ? ' editing' : ''}`}>
+                      <div className="email-header">
+                        <span className="email-stage">{email.email_stage}</span>
+                        <span className="email-time">{new Date(email.created_at).toLocaleString()}</span>
+                      </div>
+                      <div className="email-details">
+                        <p><strong>To:</strong> {email.first_name} ({email.email})</p>
+                        {isEditing ? (
+                          <>
+                            <div className="email-edit-field">
+                              <label><strong>Subject:</strong></label>
+                              <input
+                                type="text"
+                                className="email-edit-input"
+                                value={editingEmail.editSubject}
+                                onChange={e => setEditingEmail(prev => ({ ...prev, editSubject: e.target.value }))}
+                              />
+                            </div>
+                            <div className="email-edit-field">
+                              <label><strong>Body:</strong></label>
+                              <textarea
+                                className="email-edit-textarea"
+                                value={editingEmail.editBody}
+                                onChange={e => setEditingEmail(prev => ({ ...prev, editBody: e.target.value }))}
+                                rows={14}
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <p><strong>Subject:</strong> {email.subject}</p>
+                            <div className="email-body">
+                              <strong>Body:</strong>
+                              <pre>{email.body}</pre>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div className="email-actions">
+                        {isEditing ? (
+                          <>
+                            <button className="btn btn-success" onClick={handleSendEdited}>✅ Send Edited Version</button>
+                            <button className="btn btn-danger" onClick={handleDiscardEmail}>🗑️ Discard</button>
+                            <button className="btn btn-secondary" onClick={() => setEditingEmail(null)}>← Back</button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="btn btn-success" onClick={() => handleApproveEmail(email.id)}>✅ Approve & Send</button>
+                            <button className="btn btn-warning" onClick={() => handleDeclineEmail(email.id)}>✏️ Edit / Decline</button>
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="email-actions">
-                      <button className="btn btn-success" onClick={() => handleApproveEmail(email.id)}>✅ Approve & Send</button>
-                      <button className="btn btn-danger" onClick={() => handleDeclineEmail(email.id)}>❌ Decline</button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

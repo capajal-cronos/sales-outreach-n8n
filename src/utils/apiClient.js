@@ -28,14 +28,6 @@ async function fetchAPI(endpoint, options = {}) {
 }
 
 /**
- * Initialize database (no-op for API, kept for compatibility)
- */
-export async function initDatabase() {
-  // No initialization needed for API client
-  return true;
-}
-
-/**
  * Get all organizations
  */
 export async function getAllOrganizations() {
