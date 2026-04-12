@@ -151,13 +151,22 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   const handleApproveEmail = async (emailId) => {
     const email = pendingEmails.find(e => e.id === emailId);
     if (!email) return;
-    setPendingEmails(prev => prev.filter(e => e.id !== emailId));
-    onCampaignDecided?.([email.lead_id]);
-    await fetch('http://localhost:3001/api/emails/decision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lead_id: email.lead_id, decision: 'approve', email_data: email })
-    });
+    try {
+      const res = await fetch('http://localhost:3001/api/emails/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: email.lead_id, decision: 'approve', email_data: email })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`Failed to approve email: ${data.error || res.status}`);
+        return;
+      }
+      setPendingEmails(prev => prev.filter(e => e.id !== emailId));
+      onCampaignDecided?.([email.lead_id]);
+    } catch (err) {
+      alert(`Network error while approving email: ${err.message}`);
+    }
     fetchPendingEmails();
   };
 
@@ -170,18 +179,27 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   const handleSendEdited = async () => {
     if (!editingEmail) return;
     const email = editingEmail;
-    setEditingEmail(null);
-    setPendingEmails(prev => prev.filter(e => e.id !== email.id));
-    onCampaignDecided?.([email.lead_id]);
-    await fetch('http://localhost:3001/api/emails/decision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lead_id: email.lead_id,
-        decision: 'approve',
-        email_data: { ...email, subject: email.editSubject, body: email.editBody }
-      })
-    });
+    try {
+      const res = await fetch('http://localhost:3001/api/emails/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: email.lead_id,
+          decision: 'approve',
+          email_data: { ...email, subject: email.editSubject, body: email.editBody }
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`Failed to send edited email: ${data.error || res.status}`);
+        return;
+      }
+      setEditingEmail(null);
+      setPendingEmails(prev => prev.filter(e => e.id !== email.id));
+      onCampaignDecided?.([email.lead_id]);
+    } catch (err) {
+      alert(`Network error while sending email: ${err.message}`);
+    }
     fetchPendingEmails();
   };
 

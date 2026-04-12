@@ -1,12 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import './OrganizationSearch.css';
-import {
-  getAllOrganizations,
-  addOrganization,
-  deleteOrganization,
-  importOrganizations,
-  getStatistics
-} from '../utils/apiClient';
 
 function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflowErrors = [], onDismissError }) {
   const [searchMode, setSearchMode] = useState('manual'); // 'manual', 'file', or 'filters'
@@ -16,7 +9,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     organizationNumEmployeesRanges: [],
     organizationLocations: [],
     organizationIndustryTagIds: [],
-    personTitles: [],
     revenueRange: [],
     perPage: 5,  
     maxPages: 4
@@ -45,8 +37,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
-  const [dbOrganizations, setDbOrganizations] = useState([]);
-  const [dbStats, setDbStats] = useState({ total: 0, processed: 0, unprocessed: 0, errors: 0 });
   const [industryTagsInput, setIndustryTagsInput] = useState('');
   const [error, setError] = useState(null);
   const [locationInput, setLocationInput] = useState('');
@@ -65,10 +55,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const N8N_APOLLO_ACCEPTED_URL = import.meta.env.VITE_N8N_APOLLO_ACCEPTED_URL || 'https://aigeneers.app.n8n.cloud/webhook/apollo-accepted-organizations';
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 
-  // Initialize database and load organizations on mount
+  // Initialize on mount
   useEffect(() => {
     async function init() {
-      loadDbOrganizations();
       fetchPipedriveOrganizations(); // Always refresh in background
       loadApolloPendingOrgs();
     }
@@ -115,15 +104,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     }
   };
 
-  // Load organizations from database
-  const loadDbOrganizations = async () => {
-    const orgs = await getAllOrganizations();
-    setDbOrganizations(orgs);
-    const stats = await getStatistics();
-    setDbStats(stats);
-  };
-
-  // Fetch organizations from Pipedrive and sync to database
+  // Fetch organizations from Pipedrive
   const fetchPipedriveOrganizations = async () => {
     try {
       // Fetch organizations with all fields
@@ -157,9 +138,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           );
 
           setPipedriveOrganizations(detailedOrgs);
-          
-          // Sync Pipedrive organizations to database
-          await syncPipedriveToDatabase(detailedOrgs);
         } else {
           console.error('Pipedrive: no organizations data in response');
         }
@@ -168,79 +146,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
       }
     } catch (err) {
       console.error('Failed to fetch Pipedrive organizations:', err);
-    }
-  };
-
-  // Sync Pipedrive organizations to local database
-  const syncPipedriveToDatabase = async (pipedriveOrgs) => {
-    try {
-      const dbOrgs = await getAllOrganizations();
-      let syncedCount = 0;
-      let deletedCount = 0;
-      
-      // Step 1: Add new organizations from Pipedrive
-      for (const pipedriveOrg of pipedriveOrgs) {
-        // Extract domain from website URL or address
-        let domain = '';
-        if (pipedriveOrg.website) {
-          domain = pipedriveOrg.website;
-        } else if (pipedriveOrg.address) {
-          domain = pipedriveOrg.address;
-        }
-        
-        // Check if organization already exists in database by domain or name
-        const existsInDb = dbOrgs.find(dbOrg =>
-          (domain && dbOrg.domain === domain) ||
-          (pipedriveOrg.name && dbOrg.name === pipedriveOrg.name)
-        );
-        
-        if (!existsInDb) {
-          // Add to database
-          const newOrg = {
-            name: pipedriveOrg.name || '',
-            domain: domain,
-            industry: '',
-            employees: pipedriveOrg.people_count ? String(pipedriveOrg.people_count) : '',
-            location: pipedriveOrg.address || '',
-            revenue: '',
-            description: '',
-            processed: 'pipedrive',
-            error_message: ''
-          };
-          
-          await addOrganization(newOrg);
-          syncedCount++;
-        }
-      }
-      
-      // Step 2: Remove organizations from database that no longer exist in Pipedrive
-      // Only remove organizations that were originally from Pipedrive (processed: 'pipedrive')
-      const pipedriveOrgNames = new Set(pipedriveOrgs.map(org => org.name));
-      const pipedriveOrgDomains = new Set(
-        pipedriveOrgs
-          .map(org => org.website || org.address)
-          .filter(d => d)
-      );
-      
-      for (const dbOrg of dbOrgs) {
-        // Only check organizations that came from Pipedrive
-        if (dbOrg.processed === 'pipedrive') {
-          const existsInPipedrive =
-            pipedriveOrgNames.has(dbOrg.name) ||
-            (dbOrg.domain && pipedriveOrgDomains.has(dbOrg.domain));
-          
-          if (!existsInPipedrive) {
-            await deleteOrganization(dbOrg.id);
-            deletedCount++;
-          }
-        }
-      }
-
-      if (syncedCount > 0 || deletedCount > 0) {
-        await loadDbOrganizations();
-      }
-    } catch (err) {
-      console.error('Failed to sync Pipedrive organizations to database:', err);
     }
   };
 
@@ -325,40 +230,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     setError(null);
     
     try {
-      // Check if organization already exists in database for manual mode
-      if (searchMode === 'manual') {
-        const dbOrgs = await getAllOrganizations();
-        
-        // Clean domain before checking
-        const cleanedDomain = cleanDomain(searchParams.organizationDomain);
-        
-        // Check by domain if provided
-        if (cleanedDomain) {
-          const existingByDomain = dbOrgs.find(org =>
-            org.domain && cleanDomain(org.domain) === cleanedDomain
-          );
-          
-          if (existingByDomain) {
-            setError(`Organization with domain "${cleanedDomain}" already exists in database (ID: ${existingByDomain.id})`);
-            setIsLoading(false);
-            return;
-          }
-        }
-        
-        // Check by name if provided
-        if (searchParams.organizationName) {
-          const existingByName = dbOrgs.find(org =>
-            org.name && org.name.toLowerCase() === searchParams.organizationName.toLowerCase()
-          );
-          
-          if (existingByName) {
-            setError(`Organization with name "${searchParams.organizationName}" already exists in database (ID: ${existingByName.id})`);
-            setIsLoading(false);
-            return;
-          }
-        }
-      }
-      
       let requestBody;
 
       if (searchMode === 'file' && uploadedFile) {
@@ -402,13 +273,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         }
         
         setSearchResults(organizations);
-        
-        // Save to database
-        if (organizations.length > 0) {
-          await importOrganizations(organizations);
-          await loadDbOrganizations();
-        }
-        
         setIsLoading(false);
         return;
       } else if (searchMode === 'manual') {
@@ -418,13 +282,34 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           setIsLoading(false);
           return;
         }
+
+        // Check against organizations already in Pipedrive
+        const cleanedDomain = cleanDomain(searchParams.organizationDomain);
+        if (cleanedDomain) {
+          const existingByDomain = pipedriveOrganizations.find(org => {
+            const orgDomain = cleanDomain(org.website || org.domain || '');
+            return orgDomain && orgDomain === cleanedDomain;
+          });
+          if (existingByDomain) {
+            setError(`"${cleanedDomain}" already exists in Pipedrive (${existingByDomain.name})`);
+            setIsLoading(false);
+            return;
+          }
+        }
+        if (searchParams.organizationName) {
+          const existingByName = pipedriveOrganizations.find(org =>
+            org.name && org.name.toLowerCase() === searchParams.organizationName.toLowerCase()
+          );
+          if (existingByName) {
+            setError(`"${searchParams.organizationName}" already exists in Pipedrive`);
+            setIsLoading(false);
+            return;
+          }
+        }
         
         // If domain is provided, return only 1 result, otherwise use perPage
         const resultsPerPage = searchParams.organizationDomain ? 1 : searchParams.perPage;
-        
-        // Clean domain before sending
-        const cleanedDomain = cleanDomain(searchParams.organizationDomain);
-        
+
         requestBody = {
           mode: 'manual',
           q_organization_name: searchParams.organizationName || "",
@@ -473,20 +358,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
 
       // Use different webhook URL for filter-based search
       const webhookUrl = searchMode === 'filters' ? N8N_FILTERS_WEBHOOK_URL : N8N_WEBHOOK_URL;
-      
-      // Get existing organizations from database to check for duplicates
-      const existingOrgs = await getAllOrganizations();
-      const existingDomains = new Set(
-        existingOrgs
-          .map(org => org.domain ? cleanDomain(org.domain) : null)
-          .filter(domain => domain)
-      );
-      
+
       // Fetch multiple pages to get more results
       const maxPages = searchParams.maxPages || 4;
       const perPage = searchParams.perPage || 25;
       let allOrganizations = [];
-      let newOrganizations = [];
 
       for (let page = 1; page <= maxPages; page++) {
         // Update page number in request body
@@ -525,15 +401,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           break;
         }
 
-        // Filter out organizations that already exist in database
-        const pageNewOrgs = organizations.filter(org => {
-          if (!org.domain) return true; // Keep if no domain to check
-          const cleanedDomain = cleanDomain(org.domain);
-          return !existingDomains.has(cleanedDomain);
-        });
-
         allOrganizations = allOrganizations.concat(organizations);
-        newOrganizations = newOrganizations.concat(pageNewOrgs);
 
         // If we got fewer results than perPage, we've reached the end
         if (organizations.length < perPage) {
@@ -541,15 +409,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         }
       }
 
-      console.log(`Search complete: ${allOrganizations.length} found, ${newOrganizations.length} new (${allOrganizations.length - newOrganizations.length} already in database)`);
-
-      setSearchResults(newOrganizations);
-
-      // Save new organizations to database
-      if (newOrganizations.length > 0) {
-        await importOrganizations(newOrganizations);
-        await loadDbOrganizations();
-      }
+      setSearchResults(allOrganizations);
       
     } catch (err) {
       console.error('Search error:', err);
@@ -607,13 +467,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     setSearchResults(prev => prev.filter(org => org.id !== id));
   };
 
-  const handleDeleteFromDb = async (id) => {
-    if (confirm('Are you sure you want to delete this organization from the database?')) {
-      await deleteOrganization(id);
-      await loadDbOrganizations();
-    }
-  };
-
   // Handle individual Apollo decision (accept/decline)
   const handleApolloDecision = async (apolloId, action) => {
     setProcessingOrgId(apolloId);
@@ -642,9 +495,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
             setSearchResults(data.accepted);
           }
           
-          // Reload pending list and database
+          // Reload pending list
           await loadApolloPendingOrgs();
-          await loadDbOrganizations();
           
           // Check if this was the last pending organization
           const updatedPendingResponse = await fetch('http://localhost:3001/api/apollo/pending');
@@ -652,7 +504,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
             const updatedPendingData = await updatedPendingResponse.json();
             if (updatedPendingData.success && updatedPendingData.data.length === 0) {
               // All organizations processed, automatically send to n8n
-              console.log('All Apollo organizations processed, sending to n8n...');
               // Pass the updated list directly to avoid state timing issues
               await handleSendAcceptedToN8n(true, updatedSessionOrgs);
             }
@@ -671,18 +522,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const handleSendAcceptedToN8n = async (isAutomatic = false, orgsToSend = null) => {
     try {
       setIsLoading(true);
-      
-      console.log('🔍 Checking for accepted organizations in this session...');
-      
+
       // Use provided organizations or fall back to session state
       const acceptedOrgs = orgsToSend || sessionAcceptedOrgs;
-      
-      console.log('Session accepted organizations:', sessionAcceptedOrgs.length);
-      console.log('Accepted organizations to send:', acceptedOrgs.length);
-      console.log('Accepted organizations:', acceptedOrgs);
 
       if (acceptedOrgs.length === 0) {
-        console.log('⚠️ No accepted Apollo organizations to send in this session');
         if (!isAutomatic) {
           alert('No accepted Apollo organizations to send');
         }
@@ -695,9 +539,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         timestamp: new Date().toISOString()
       };
 
-      console.log('📤 Sending to n8n webhook:', N8N_APOLLO_ACCEPTED_URL);
-      console.log('📦 Payload:', JSON.stringify(payload, null, 2));
-
       // Send to n8n webhook
       const response = await fetch(N8N_APOLLO_ACCEPTED_URL, {
         method: 'POST',
@@ -705,26 +546,18 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         body: JSON.stringify(payload)
       });
 
-      console.log('📥 Response status:', response.status, response.statusText);
-
       if (response.ok) {
-        const responseData = await response.text();
-        console.log('📥 Response data:', responseData);
-        
-        const message = `✅ Successfully sent ${acceptedOrgs.length} accepted organizations to n8n!`;
-        console.log(message);
-        alert(message);
+        await response.text();
+        alert(`✅ Successfully sent ${acceptedOrgs.length} accepted organizations to n8n!`);
         
         // Clear session accepted organizations after successful send
         setSessionAcceptedOrgs([]);
         setShowApolloModal(false);
       } else {
-        const errorText = await response.text();
-        console.error('❌ Error response:', errorText);
         throw new Error(`Failed to send to n8n: ${response.status} ${response.statusText}`);
       }
     } catch (err) {
-      console.error('❌ Failed to send accepted organizations to n8n:', err);
+      console.error('Failed to send accepted organizations to n8n:', err);
       if (!isAutomatic) {
         alert('❌ Failed to send organizations to n8n. Please try again.');
       }
@@ -863,24 +696,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
               </table>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Send Accepted Organizations to n8n - Shows when no pending orgs */}
-      {apolloPendingOrgs.length === 0 && dbOrganizations.some(org => org.source === 'apollo' && org.processed === 'success') && (
-        <div style={{ marginBottom: '2rem', padding: '1.5rem', backgroundColor: '#d4edda', borderRadius: '8px', border: '2px solid #28a745' }}>
-          <h3 style={{ color: '#155724', marginBottom: '1rem' }}>✅ All Apollo Results Reviewed!</h3>
-          <p style={{ color: '#155724', marginBottom: '1rem' }}>
-            You have {dbOrganizations.filter(org => org.source === 'apollo' && org.processed === 'success').length} accepted organizations ready to send to n8n.
-          </p>
-          <button
-            className="btn btn-primary"
-            onClick={handleSendAcceptedToN8n}
-            disabled={isLoading}
-            style={{ padding: '0.75rem 1.5rem', fontSize: '1rem' }}
-          >
-            {isLoading ? '⏳ Sending...' : '🚀 Send Accepted Organizations to n8n'}
-          </button>
         </div>
       )}
 

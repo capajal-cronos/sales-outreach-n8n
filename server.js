@@ -2,13 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import {
-  handleOrganizationError,
-  handleOrganizationSuccess,
-  handleGetAllOrganizations,
-  handleGetStatistics,
-  handleImportOrganizations,
-  handleDeleteOrganization,
-  handleAddOrganization,
   handleApolloSearchResults,
   handleGetPendingApolloOrgs,
   handleApolloDecisions,
@@ -19,7 +12,6 @@ import {
   addEmailToQueue,
   getPendingEmails,
   getAllEmails,
-  updateEmailStatus,
   deleteEmailFromQueue,
   clearEmailsByStatus,
   addResponse,
@@ -43,41 +35,6 @@ app.use(express.json());
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Organization API is running' });
-});
-
-// Get all organizations
-app.get('/api/organizations', async (req, res) => {
-  await handleGetAllOrganizations(req, res);
-});
-
-// Get statistics
-app.get('/api/organizations/statistics', async (req, res) => {
-  await handleGetStatistics(req, res);
-});
-
-// Add organization (from UI)
-app.post('/api/organizations', async (req, res) => {
-  await handleAddOrganization(req, res);
-});
-
-// Import multiple organizations
-app.post('/api/organizations/import', async (req, res) => {
-  await handleImportOrganizations(req, res);
-});
-
-// Delete organization
-app.delete('/api/organizations/:id', async (req, res) => {
-  await handleDeleteOrganization(req, res);
-});
-
-// Organization error endpoint - for n8n to POST when processing fails
-app.post('/api/organization/error', async (req, res) => {
-  await handleOrganizationError(req, res);
-});
-
-// Organization success endpoint - for n8n to POST when processing succeeds
-app.post('/api/organization/success', async (req, res) => {
-  await handleOrganizationSuccess(req, res);
 });
 
 // Apollo search results endpoint - receive organizations from Apollo search
@@ -285,29 +242,28 @@ app.post('/api/emails/decision', async (req, res) => {
       });
     }
 
-    // Remove email from queue completely
+    // Check n8n webhook is configured before deleting from queue
+    const n8nWebhookUrl = process.env.N8N_APPROVAL_WEBHOOK_URL;
+    if (!n8nWebhookUrl) {
+      console.error('N8N_APPROVAL_WEBHOOK_URL not configured');
+      return res.status(500).json({ success: false, error: 'N8N_APPROVAL_WEBHOOK_URL is not configured on the server' });
+    }
+
+    // Remove email from queue
     if (email_data && email_data.id) {
       try {
         await deleteEmailFromQueue(email_data.id);
       } catch (dbError) {
         console.error('Error removing email from queue:', dbError);
-        // Continue even if database deletion fails
       }
     }
 
     // Send decision to n8n webhook
-    const n8nWebhookUrl = process.env.N8N_APPROVAL_WEBHOOK_URL;
-    if (!n8nWebhookUrl) {
-      console.error('N8N_APPROVAL_WEBHOOK_URL not configured');
-      return res.status(500).json({ success: false, error: 'N8N webhook not configured' });
-    }
-    
+    let n8nError = null;
     try {
       const response = await fetch(n8nWebhookUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lead_id,
           decision,
@@ -317,18 +273,20 @@ app.post('/api/emails/decision', async (req, res) => {
       });
 
       if (!response.ok) {
+        n8nError = `n8n returned ${response.status}`;
         console.error(`Failed to send decision to n8n: ${response.status}`);
       }
     } catch (error) {
+      n8nError = error.message;
       console.error('Error sending decision to n8n:', error);
-      // Don't fail the request if n8n webhook fails
     }
 
     res.json({
       success: true,
       message: `Email ${decision}d successfully`,
       lead_id,
-      decision
+      decision,
+      ...(n8nError ? { warning: `n8n webhook failed: ${n8nError}` } : {})
     });
   } catch (error) {
     console.error('Error processing email decision:', error);
@@ -419,7 +377,6 @@ app.delete('/api/email-queue/status/:status', async (req, res) => {
 app.post('/api/responses', async (req, res) => {
   try {
     const payload = Array.isArray(req.body) ? req.body[0] : req.body;
-    console.log('[responses] incoming payload keys:', Object.keys(payload));
     const response = await addResponse(payload);
     res.json({ success: true, response });
   } catch (error) {
@@ -487,13 +444,7 @@ app.delete('/api/workflow-errors/:id', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Organization API server running on http://localhost:${PORT}`);
-  console.log(`\n📊 Organizations:`);
-  console.log(`   GET  http://localhost:${PORT}/api/organizations - Get all organizations`);
-  console.log(`   GET  http://localhost:${PORT}/api/organizations/statistics - Get statistics`);
-  console.log(`   POST http://localhost:${PORT}/api/organizations - Add organization`);
-  console.log(`   POST http://localhost:${PORT}/api/organizations/import - Import organizations`);
-  console.log(`   DEL  http://localhost:${PORT}/api/organizations/:id - Delete organization`);
+  console.log(`🚀 API server running on http://localhost:${PORT}`);
   console.log(`\n🔍 Apollo:`);
   console.log(`   POST http://localhost:${PORT}/api/apollo/results - Store Apollo search results`);
   console.log(`   GET  http://localhost:${PORT}/api/apollo/pending - Get pending Apollo organizations`);

@@ -12,25 +12,6 @@
   color: var(--text-primary);
 }
 
-.review-instructions {
-  margin: 10px 0 20px 0;
-  color: var(--text-secondary);
-  font-size: 0.95em;
-}
-
-.no-emails-message {
-  text-align: center;
-  padding: 40px 20px;
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  color: var(--text-secondary);
-  font-size: 1.1em;
-}
-
-.no-emails-message p {
-  margin: 0;
-}
-
 .emails-list {
   margin: 20px 0;
   max-height: 600px;
@@ -53,6 +34,11 @@
   border-left: 4px solid #667eea;
 }
 
+.email-card.editing {
+  border-left: 4px solid #f59e0b;
+  background: #fffbf0;
+}
+
 @keyframes slideIn {
   from {
     opacity: 0;
@@ -71,12 +57,6 @@
   margin-bottom: 10px;
   padding-bottom: 10px;
   border-bottom: 1px solid #e0e0e0;
-}
-
-.email-number {
-  font-weight: bold;
-  color: #667eea;
-  font-size: 1.1em;
 }
 
 .email-stage {
@@ -164,6 +144,28 @@
   box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
 }
 
+.email-actions .btn-warning {
+  background: #f59e0b;
+  color: white;
+}
+
+.email-actions .btn-warning:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3);
+}
+
+.email-actions .btn-secondary {
+  background: #6b7280;
+  color: white;
+}
+
+.email-actions .btn-secondary:hover {
+  background: #4b5563;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(107, 114, 128, 0.3);
+}
+
 .email-actions .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -172,195 +174,6 @@
 
 .email-campaign {
   animation: fadeIn 0.3s ease-in;
-}
-
-.campaign-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-.info-card {
-  background-color: var(--bg-secondary);
-  padding: 2rem;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.info-card h3 {
-  margin: 0 0 1rem 0;
-  color: var(--text-primary);
-  font-size: 1.3rem;
-}
-
-.info-card p {
-  margin: 0 0 1rem 0;
-  color: var(--text-secondary);
-  line-height: 1.6;
-}
-
-.info-card ul {
-  margin: 0;
-  padding-left: 1.5rem;
-  color: var(--text-secondary);
-}
-
-.info-card li {
-  margin: 0.5rem 0;
-  line-height: 1.6;
-}
-
-.info-card li strong {
-  color: var(--text-primary);
-  font-family: monospace;
-  background-color: var(--bg-primary);
-  padding: 0.2rem 0.4rem;
-  border-radius: 4px;
-}
-
-.campaign-trigger {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding: 2rem;
-  background-color: var(--bg-secondary);
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.warning-text {
-  color: var(--error-color);
-  margin: 0;
-  font-size: 0.95em;
-}
-
-.btn-large {
-  padding: 1rem 2rem;
-  font-size: 1.1rem;
-  min-width: 300px;
-}
-
-.result-message {
-  display: flex;
-  gap: 1rem;
-  padding: 1.5rem;
-  border-radius: 12px;
-  background-color: var(--bg-secondary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  animation: slideIn 0.3s ease-out;
-}
-
-.result-message.success {
-  border-left: 4px solid var(--success-color);
-}
-
-.result-message.error {
-  border-left: 4px solid var(--error-color);
-}
-
-.result-icon {
-  font-size: 2rem;
-  flex-shrink: 0;
-}
-
-.result-content {
-  flex: 1;
-}
-
-.result-content strong {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: var(--text-primary);
-  font-size: 1.1rem;
-}
-
-.result-content p {
-  margin: 0 0 0.5rem 0;
-  color: var(--text-secondary);
-}
-
-.result-content small {
-  color: var(--text-secondary);
-  opacity: 0.7;
-}
-
-.workflow-notes {
-  background-color: var(--bg-secondary);
-  padding: 1.5rem;
-  border-radius: 12px;
-  border-left: 4px solid var(--primary-color);
-}
-
-.workflow-notes h4 {
-  margin: 0 0 1rem 0;
-  color: var(--text-primary);
-}
-
-.workflow-notes ul {
-  margin: 0;
-  padding-left: 1.5rem;
-  color: var(--text-secondary);
-}
-
-.workflow-notes li {
-  margin: 0.5rem 0;
-  line-height: 1.6;
-}
-
-@media (max-width: 768px) {
-  .info-card {
-    padding: 1.5rem;
-  }
-
-  .btn-large {
-    min-width: 100%;
-  }
-
-  .result-message {
-    flex-direction: column;
-    text-align: center;
-  }
-}
-/* Workflow Summary - Compact Design */
-.workflow-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 15px;
-  margin-bottom: 20px;
-}
-
-.summary-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 15px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  border-radius: 8px;
-  border-left: 4px solid #667eea;
-}
-
-.summary-icon {
-  font-size: 24px;
-  flex-shrink: 0;
-}
-
-.summary-content {
-  flex: 1;
-}
-
-.summary-content strong {
-  display: block;
-  font-size: 14px;
-  color: #2d3748;
-  margin-bottom: 4px;
-}
-
-.summary-content p {
-  font-size: 13px;
-  color: #4a5568;
-  margin: 0;
-  line-height: 1.4;
 }
 
 /* Processing Indicator */
@@ -409,7 +222,7 @@
   }
 }
 
-/* Pending Header - Compact Design */
+/* Pending Header */
 .pending-header {
   margin-bottom: 15px;
   padding-bottom: 10px;
@@ -428,12 +241,7 @@
   color: #718096;
 }
 
-/* ── Edit / Decline inline editor ── */
-.email-card.editing {
-  border-left: 4px solid #f59e0b;
-  background: #fffbf0;
-}
-
+/* Inline editor */
 .email-edit-field {
   margin-top: 10px;
   display: flex;
@@ -484,26 +292,4 @@
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
-}
-
-.email-actions .btn-warning {
-  background: #f59e0b;
-  color: white;
-}
-
-.email-actions .btn-warning:hover {
-  background: #d97706;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3);
-}
-
-.email-actions .btn-secondary {
-  background: #6b7280;
-  color: white;
-}
-
-.email-actions .btn-secondary:hover {
-  background: #4b5563;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(107, 114, 128, 0.3);
 }

@@ -32,18 +32,6 @@
   padding: 2rem;
 }
 
-.app-footer {
-  background-color: var(--bg-secondary);
-  padding: 1rem 2rem;
-  text-align: center;
-  border-top: 1px solid var(--border-color);
-  color: var(--text-secondary);
-}
-
-.app-footer p {
-  margin: 0;
-}
-
 /* Common Styles */
 .section-header {
   margin-bottom: 2rem;
@@ -126,16 +114,6 @@
   box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
 }
 
-.btn-large {
-  padding: 1rem 2rem;
-  font-size: 1.1rem;
-}
-
-.btn-sm {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.9rem;
-}
-
 .btn-icon {
   background: none;
   border: none;
@@ -166,35 +144,6 @@
 .btn-link:hover {
   color: var(--primary-hover);
 }
-
-.webhook-info {
-  margin-top: 3rem;
-  padding: 1.5rem;
-  background-color: var(--bg-secondary);
-  border-radius: 8px;
-  border-left: 4px solid var(--primary-color);
-}
-
-.webhook-info h4 {
-  margin: 0 0 1rem 0;
-  color: var(--text-primary);
-}
-
-.webhook-info p {
-  margin: 0.5rem 0;
-  color: var(--text-secondary);
-}
-
-.webhook-info code {
-  display: block;
-  background-color: var(--bg-primary);
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  margin: 0.5rem 0;
-  font-family: 'Courier New', monospace;
-  color: var(--primary-color);
-}
-
 
 @media (max-width: 768px) {
   .app-header h1 {
