@@ -163,17 +163,19 @@ function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>🚀 n8n Workflow Manager</h1>
-        <p className="subtitle">Apollo → Pipedrive → Email Automation</p>
-      </header>
-
-      <WorkflowProgress
-        steps={steps} 
-        currentStep={currentStep} 
-        onStepClick={goToStep}
-        workflowData={workflowData}
-      />
+      <aside className="app-sidebar">
+        <div className="sidebar-brand">
+          <h1>LeadFlow Pro</h1>
+          <p className="sidebar-tagline">Sales Outreach Platform</p>
+        </div>
+        <div className="sidebar-divider" />
+        <WorkflowProgress
+          steps={steps}
+          currentStep={currentStep}
+          onStepClick={goToStep}
+          workflowData={workflowData}
+        />
+      </aside>
 
       <main className="app-main">
         <CurrentComponent
@@ -188,7 +190,6 @@ function App() {
           onDismissError={dismissError}
         />
       </main>
-
     </div>
   );
 }

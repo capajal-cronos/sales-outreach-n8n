@@ -8,38 +8,28 @@ function WorkflowProgress({ steps, currentStep, onStepClick, workflowData }) {
     4: workflowData.campaigns?.length || 0
   };
 
-  const getStepStatus = (stepId) => {
-    if (stepId === currentStep) return 'active';
-    if (counts[stepId] > 0) return 'completed';
-    return 'pending';
-  };
-
-  const getStepCount = (stepId) => counts[stepId];
-
   return (
-    <div className="workflow-progress">
-      <div className="progress-steps">
-        {steps.map((step) => (
-          <div key={step.id} className="progress-step-wrapper">
-            <div
-              className={`progress-step ${getStepStatus(step.id)} clickable`}
+    <nav className="workflow-nav" aria-label="Workflow steps">
+      <div className="workflow-steps">
+        {steps.map((step) => {
+          const count = counts[step.id];
+          const isActive = step.id === currentStep;
+          return (
+            <button
+              key={step.id}
+              className={`workflow-step${isActive ? ' active' : ''}`}
               onClick={() => onStepClick(step.id)}
-              title={`Go to ${step.name}`}
+              aria-current={isActive ? 'step' : undefined}
             >
-              <div className="step-number">
-                {step.id}
-              </div>
-              <div className="step-info">
-                <div className="step-name">{step.name}</div>
-                <div className="step-count">
-                  {getStepCount(step.id) > 0 && `${getStepCount(step.id)} items`}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
+              <span className="step-name">{step.name}</span>
+              {count > 0 && (
+                <span className="step-badge">{count}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
-    </div>
+    </nav>
   );
 }
 

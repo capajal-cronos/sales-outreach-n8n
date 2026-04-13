@@ -297,12 +297,27 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
       }
 
       setCurrentOrgMapping(orgMapping);
-      if (limitedPeople.length > 0) {
-        setSelectedPeople(new Set(limitedPeople.map((p, i) => p.id || `idx-${i}`)));
-        setFoundPeopleModal({ show: true, people: limitedPeople });
+
+      // Filter out people already in Pipedrive (match by name, case-insensitive)
+      const existingNames = new Set(
+        pipedrivePersons.map(p => (p.name || '').trim().toLowerCase())
+      );
+      const newPeople = limitedPeople.filter(
+        p => !existingNames.has((p.name || '').trim().toLowerCase())
+      );
+
+      if (newPeople.length > 0) {
+        setSelectedPeople(new Set(newPeople.map((p, i) => p.id || `idx-${i}`)));
+        setFoundPeopleModal({ show: true, people: newPeople });
+        if (newPeople.length < limitedPeople.length) {
+          const skipped = limitedPeople.length - newPeople.length;
+          setSearchStatus({ type: 'success', message: `Found ${newPeople.length} new people (${skipped} already in Pipedrive)` });
+        }
+      } else if (limitedPeople.length > 0) {
+        setSearchStatus({ type: 'success', message: `All ${limitedPeople.length} found people are already in Pipedrive` });
       }
     } catch (error) {
-      console.error('❌ Error searching for people:', error);
+      console.error('Error searching for people:', error);
       setSearchStatus({ type: 'error', message: `Failed to search for people: ${error.message}` });
     } finally {
       setIsLoading(false);
@@ -360,7 +375,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   return (
     <div className="people-finder">
       <div className="section-header">
-        <h2>👥 Find People</h2>
+        <h2>Find People</h2>
         <p>Search for contacts within selected organizations or view existing people from Pipedrive</p>
       </div>
 
@@ -372,7 +387,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         </div>
       ) : pipedrivePersons.length > 0 && (
         <div className="pipedrive-people">
-          <h3>📋 People in Pipedrive ({pipedrivePersons.length})</h3>
+          <h3>People in Pipedrive ({pipedrivePersons.length})</h3>
           <div className="pipedrive-table-container">
             <table className="pipedrive-table">
               <thead>
@@ -389,26 +404,21 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                 {pipedrivePersons.map(person => {
                   const headline = person.headline || '';
                   const linkedinUrl = person.linkedin_url || '';
-                  const truncatedHeadline = headline.length > 50 ? headline.substring(0, 50) + '...' : headline;
-                  
+
                   return (
                     <tr key={person.id}>
                       <td><strong>{person.name}</strong></td>
                       <td style={{ fontSize: '0.9em', color: '#666' }}>
                         {person._detailFetchFailed ? (
-                          <span style={{ color: 'orange' }}>⚠️ Failed to load</span>
+                          <span style={{ color: 'orange' }}>Failed to load</span>
                         ) : headline ? (
-                          headline.length > 50 ? (
-                            <span
-                              style={{ cursor: 'pointer', color: 'var(--primary-color)' }}
-                              onClick={() => setHeadlineModal({ show: true, headline, name: person.name })}
-                              title="Click to read full headline"
-                            >
-                              {truncatedHeadline}
-                            </span>
-                          ) : (
-                            headline
-                          )
+                          <span
+                            style={{ cursor: 'pointer', color: 'var(--primary-color)' }}
+                            onClick={() => setHeadlineModal({ show: true, headline, name: person.name })}
+                            title="Click to read full headline"
+                          >
+                            {headline}
+                          </span>
                         ) : '-'}
                       </td>
                       <td>{person.email && person.email[0] ? person.email[0].value : '-'}</td>
@@ -416,7 +426,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                       <td>{person.org_id?.name || '-'}</td>
                       <td>
                         {person._detailFetchFailed ? (
-                          <span style={{ color: 'orange' }}>⚠️ Failed to load</span>
+                          <span style={{ color: 'orange' }}>Failed to load</span>
                         ) : linkedinUrl ? (
                           <a href={linkedinUrl.startsWith('http') ? linkedinUrl : `https://${linkedinUrl}`} target="_blank" rel="noopener noreferrer">
                             LinkedIn
@@ -570,7 +580,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                 </label>
               </div>
               <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
-                ℹ️ Enabling this filter may significantly reduce results but ensures higher email deliverability
+                Enabling this filter may significantly reduce results but ensures higher email deliverability
               </small>
             </div>
 
@@ -597,7 +607,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                   style={{ width: '100px' }}
                 />
                 <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
-                  ℹ️ Limit the number of people to find per company (1-50)
+                  Limit the number of people to find per company (1-50)
                 </small>
               </div>
             </div>
@@ -615,7 +625,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
               ))}
               {searchStatus && (
                 <p className={`search-status search-status--${searchStatus.type}`}>
-                  {searchStatus.type === 'success' ? '✓' : '✕'} {searchStatus.message}
+                  {searchStatus.message}
                 </p>
               )}
               <button
@@ -623,7 +633,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                 onClick={handleSearch}
                 disabled={isLoading || searchParams.selectedOrganizations.length === 0}
               >
-                {isLoading ? '🔍 Searching...' : '🔍 Find People'}
+                {isLoading ? 'Searching...' : 'Find People'}
               </button>
             </div>
           </div>
@@ -712,7 +722,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                 </tbody>
               </table>
             </div>
-            <div style={{ padding: '1rem 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '1rem 1.5rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>
                 {selectedPeople.size} of {foundPeopleModal.people.length} selected
               </span>
@@ -734,7 +744,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         <div className="modal-overlay" onClick={() => setHeadlineModal({ show: false, headline: '', name: '' })}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>📋 Full Headline</h3>
+              <h3>Full Headline</h3>
               <button className="modal-close" onClick={() => setHeadlineModal({ show: false, headline: '', name: '' })}>
                 ✕
               </button>

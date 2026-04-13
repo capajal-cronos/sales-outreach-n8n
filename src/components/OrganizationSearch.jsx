@@ -548,7 +548,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
 
       if (response.ok) {
         await response.text();
-        alert(`✅ Successfully sent ${acceptedOrgs.length} accepted organizations to n8n!`);
+        alert(`Successfully sent ${acceptedOrgs.length} accepted organizations to n8n!`);
         
         // Clear session accepted organizations after successful send
         setSessionAcceptedOrgs([]);
@@ -559,7 +559,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     } catch (err) {
       console.error('Failed to send accepted organizations to n8n:', err);
       if (!isAutomatic) {
-        alert('❌ Failed to send organizations to n8n. Please try again.');
+        alert('Failed to send organizations to n8n. Please try again.');
       }
     } finally {
       setIsLoading(false);
@@ -597,7 +597,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   return (
     <div className="organization-search">
       <div className="section-header">
-        <h2>🏢 Find Organizations</h2>
+        <h2>Find Organizations</h2>
       </div>
 
       {/* Apollo Modal */}
@@ -626,7 +626,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
             boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, color: '#2c3e50' }}>🔍 New Apollo Search Results ({apolloPendingOrgs.length})</h2>
+              <h2 style={{ margin: 0, color: '#2c3e50' }}>New Apollo Search Results ({apolloPendingOrgs.length})</h2>
               <button
                 onClick={() => setShowApolloModal(false)}
                 style={{
@@ -678,7 +678,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                             disabled={processingOrgId === org.apollo_id}
                             style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
                           >
-                            {processingOrgId === org.apollo_id ? '⏳' : '✅'} Accept
+                            {processingOrgId === org.apollo_id ? '...' : 'Accept'}
                           </button>
                           <button
                             className="btn btn-secondary"
@@ -686,7 +686,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                             disabled={processingOrgId === org.apollo_id}
                             style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
                           >
-                            {processingOrgId === org.apollo_id ? '⏳' : '❌'} Decline
+                            {processingOrgId === org.apollo_id ? '...' : 'Decline'}
                           </button>
                         </div>
                       </td>
@@ -703,7 +703,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
       {!showApolloModal && apolloPendingOrgs.length > 0 && (
         <div className="apollo-pending-orgs" style={{ marginBottom: '2rem', padding: '1.5rem', backgroundColor: '#fff3cd', borderRadius: '8px', border: '2px solid #ffc107' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3 style={{ color: '#856404', margin: 0 }}>🔍 Apollo Search Results - Review & Accept ({apolloPendingOrgs.length})</h3>
+            <h3 style={{ color: '#856404', margin: 0 }}>Apollo Search Results - Review & Accept ({apolloPendingOrgs.length})</h3>
             <button
               onClick={() => setShowApolloModal(true)}
               style={{
@@ -756,7 +756,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                           disabled={processingOrgId === org.apollo_id}
                           style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
                         >
-                          {processingOrgId === org.apollo_id ? '⏳' : '✅'} Accept
+                          {processingOrgId === org.apollo_id ? '...' : 'Accept'}
                         </button>
                         <button
                           className="btn btn-secondary"
@@ -764,7 +764,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                           disabled={processingOrgId === org.apollo_id}
                           style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
                         >
-                          {processingOrgId === org.apollo_id ? '⏳' : '❌'} Decline
+                          {processingOrgId === org.apollo_id ? '...' : 'Decline'}
                         </button>
                       </div>
                     </td>
@@ -779,7 +779,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
       {/* Pipedrive Organizations */}
       {pipedriveOrganizations.length > 0 ? (
         <div className="pipedrive-orgs">
-          <h3>📋 Organizations in Pipedrive ({pipedriveOrganizations.length})</h3>
+          <h3>Organizations in Pipedrive ({pipedriveOrganizations.length})</h3>
           <div className="pipedrive-table-container">
             <table className="pipedrive-table">
               <thead>
@@ -824,7 +824,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           marginBottom: '2rem',
           border: '2px dashed #dee2e6'
         }}>
-          <h3 style={{ color: '#6c757d', marginBottom: '0.5rem' }}>📭 No Organizations Found</h3>
+          <h3 style={{ color: '#6c757d', marginBottom: '0.5rem' }}>No Organizations Found</h3>
           <p style={{ color: '#6c757d', margin: 0 }}>
             No organizations or persons found in Pipedrive. Add some organizations to get started!
           </p>
@@ -842,25 +842,25 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           className={`mode-btn ${searchMode === 'manual' ? 'active' : ''}`}
           onClick={() => handleModeChange('manual')}
         >
-          ✍️ Manual Entry
+          Manual Entry
         </button>
         <button 
           className={`mode-btn ${searchMode === 'file' ? 'active' : ''}`}
           onClick={() => handleModeChange('file')}
         >
-          📁 Upload File
+          Upload File
         </button>
         <button 
           className={`mode-btn ${searchMode === 'filters' ? 'active' : ''}`}
           onClick={() => handleModeChange('filters')}
         >
-          🔍 Search by Filters
+          Search by Filters
         </button>
       </div>
 
       {error && (
         <div className="error-message">
-          ⚠️ {error}
+          {error}
         </div>
       )}
 
@@ -882,11 +882,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                   className="btn btn-secondary"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  📎 Choose File
+                  Choose File
                 </button>
                 {uploadedFile && (
                   <div className="file-info">
-                    <span className="file-name">✓ {uploadedFile.name}</span>
+                    <span className="file-name">{uploadedFile.name}</span>
                     <button 
                       className="btn-icon"
                       onClick={() => setUploadedFile(null)}
@@ -1188,7 +1188,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
             onClick={handleSearch}
             disabled={isLoading || (searchMode === 'file' && !uploadedFile)}
           >
-            {isLoading ? '🔍 Searching...' : '🔍 Search Organizations'}
+            {isLoading ? 'Searching...' : 'Search Organizations'}
           </button>
         </div>
       </div>

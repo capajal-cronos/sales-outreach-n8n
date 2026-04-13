@@ -238,7 +238,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   return (
     <div className="lead-management">
       <div className="section-header">
-        <h2>📊 Leads & Campaign</h2>
+        <h2>Leads & Campaign</h2>
         <p>Select leads to run a campaign, then review and approve generated emails below</p>
       </div>
 
@@ -258,11 +258,11 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
       )}
 
       {isLoading ? (
-        <div className="empty-state"><p>⏳ Loading leads...</p></div>
+        <div className="empty-state"><p>Loading leads...</p></div>
       ) : leads.length === 0 ? (
         <div className="empty-state">
-          <p>📭 No leads found.</p>
-          <button className="btn btn-primary" onClick={fetchLeads}>🔄 Refresh</button>
+          <p>No leads found.</p>
+          <button className="btn btn-primary" onClick={fetchLeads}>Refresh</button>
         </div>
       ) : (
         <>
@@ -285,21 +285,21 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                 onClick={handleStartForSelected}
                 disabled={selectedLeads.length === 0 || isSending}
               >
-                {isSending ? '⏳ Sending...' : `🚀 Campaign (${selectedLeads.length} selected)`}
+                {isSending ? 'Sending...' : `Campaign (${selectedLeads.length} selected)`}
               </button>
               <button
                 className="btn btn-secondary"
                 onClick={handleStartForAll}
                 disabled={isSending || eligibleLeads.filter(l => !(l.id in campaignPendingLeads)).length === 0}
               >
-                🚀 Campaign for all ({eligibleLeads.length})
+                Campaign for all ({eligibleLeads.length})
               </button>
               <button
                 className="btn btn-danger"
                 onClick={handleDeleteLeads}
                 disabled={selectedLeads.length === 0 || isDeleting}
               >
-                {isDeleting ? '⏳' : `🗑️ Delete (${selectedLeads.length})`}
+                {isDeleting ? '...' : `Delete (${selectedLeads.length})`}
               </button>
             </div>
           </div>
@@ -351,7 +351,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                       </td>
                       <td>
                         <strong>{lead.title || '-'}</strong>
-                        {isPending && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#888' }}>⏳ in campaign…</span>}
+                        {isPending && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>in campaign…</span>}
                       </td>
                       <td>{lead.organization || '-'}</td>
                       <td>{lead.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : '-'}</td>
@@ -372,7 +372,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
           {pendingCount > pendingEmails.length && (
             <div className="processing-indicator" style={{ marginTop: '2rem' }}>
               <div className="spinner"></div>
-              <p>🤖 AI is generating emails ({pendingEmails.length} ready, {pendingCount - pendingEmails.length} in progress)…</p>
+              <p>AI is generating emails ({pendingEmails.length} ready, {pendingCount - pendingEmails.length} in progress)…</p>
             </div>
           )}
 
@@ -380,7 +380,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
           {pendingEmails.length > 0 && (
             <div className="pending-emails-container" style={{ marginTop: '2rem' }}>
               <div className="pending-header">
-                <h3>📬 Pending Emails ({pendingEmails.length})</h3>
+                <h3>Pending Emails ({pendingEmails.length})</h3>
                 <p>Review and approve before sending</p>
               </div>
               <div className="emails-list">
@@ -428,14 +428,14 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                       <div className="email-actions">
                         {isEditing ? (
                           <>
-                            <button className="btn btn-success" onClick={handleSendEdited}>✅ Send Edited Version</button>
-                            <button className="btn btn-danger" onClick={handleDiscardEmail}>🗑️ Discard</button>
+                            <button className="btn btn-success" onClick={handleSendEdited}>Send Edited Version</button>
+                            <button className="btn btn-danger" onClick={handleDiscardEmail}>Discard</button>
                             <button className="btn btn-secondary" onClick={() => setEditingEmail(null)}>← Back</button>
                           </>
                         ) : (
                           <>
-                            <button className="btn btn-success" onClick={() => handleApproveEmail(email.id)}>✅ Approve & Send</button>
-                            <button className="btn btn-warning" onClick={() => handleDeclineEmail(email.id)}>✏️ Edit / Decline</button>
+                            <button className="btn btn-success" onClick={() => handleApproveEmail(email.id)}>Approve & Send</button>
+                            <button className="btn btn-warning" onClick={() => handleDeclineEmail(email.id)}>Edit / Decline</button>
                           </>
                         )}
                       </div>
@@ -448,7 +448,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
 
           {pendingCount === 0 && pendingEmails.length === 0 && !actionResult && (
             <p style={{ marginTop: '1.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              📭 No pending emails. Select leads above and start a campaign.
+              No pending emails. Select leads above and start a campaign.
             </p>
           )}
         </>

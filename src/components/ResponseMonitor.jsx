@@ -39,7 +39,7 @@ function ResponseMonitor({ onPrevious }) {
   return (
     <div className="response-monitor">
       <div className="section-header">
-        <h2>📊 Response Monitor</h2>
+        <h2>Response Monitor</h2>
         <p>
           {responses.length} repl{responses.length === 1 ? 'y' : 'ies'} · auto-refreshes every 10s
           {lastUpdated && (
