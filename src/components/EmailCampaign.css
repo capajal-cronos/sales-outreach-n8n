@@ -130,21 +130,21 @@
 }
 
 .email-actions .btn-danger {
-  background: var(--error-color);
+  background: #8B2020;
   color: #FFFFFF;
 }
 
 .email-actions .btn-danger:hover {
-  background: #B04A4A;
+  background: #6E1818;
 }
 
 .email-actions .btn-warning {
-  background: var(--warning-color);
+  background: #9A6B3A;
   color: #FFFFFF;
 }
 
 .email-actions .btn-warning:hover {
-  background: #B07A35;
+  background: #7E572E;
 }
 
 .email-actions .btn-secondary {

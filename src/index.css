@@ -33,8 +33,8 @@
   --accent-dark: #A67B5B;
 
   /* Actions */
-  --primary-color: #292524;
-  --primary-hover: #1C1917;
+  --primary-color: #3a312c;
+  --primary-hover: #241e1b;
   --primary-light: rgba(41, 37, 36, 0.10);
 
   /* Semantic */
@@ -114,6 +114,10 @@ h3 {
 
 input, select, textarea {
   font-family: var(--font-body);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--primary-color);
 }
 
 button {

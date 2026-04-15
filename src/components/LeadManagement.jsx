@@ -294,10 +294,12 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
               <label>Filter:</label>
               <select value={filter} onChange={e => setFilter(e.target.value)} className="select-input">
                 <option value="all">All ({leads.length})</option>
-                {Object.entries(labelMapping).map(([id, name]) => {
-                  const count = leads.filter(l => (l.label_ids || []).includes(id)).length;
-                  return <option key={id} value={id}>{name} ({count})</option>;
-                })}
+                {Object.entries(labelMapping)
+                  .filter(([, name]) => !['hot', 'warm', 'cold'].includes(name.toLowerCase()))
+                  .map(([id, name]) => {
+                    const count = leads.filter(l => (l.label_ids || []).includes(id)).length;
+                    return <option key={id} value={id}>{name} ({count})</option>;
+                  })}
               </select>
             </div>
 

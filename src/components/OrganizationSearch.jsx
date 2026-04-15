@@ -732,7 +732,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                     return (
                       <tr
                         key={org.apollo_id}
-                        style={{ cursor: 'pointer', opacity: isSelected ? 1 : 0.45 }}
+                        style={{ cursor: 'pointer' }}
                         onClick={() => toggleOrgSelection(org.apollo_id)}
                       >
                         <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>

@@ -10,9 +10,9 @@
   min-height: 100vh;
   background: radial-gradient(
     circle at 80% 15%, /* Skews the light source to the right and slightly down */
-    #52463e 0%,      /* Brighter "hit" of light */
-    #3a312c 70%,     /* Your original base */
-    #241e1b 100%     /* Deeper shadow for better depth */
+    #52463e 0%,
+    #3a312c 70%,
+    #241e1b 100%
   );
   border-right: none;
   box-shadow:

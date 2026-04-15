@@ -277,7 +277,20 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const data = await response.json();
+      const text = await response.text();
+      // n8n returns an empty body when Apollo finds 0 people (Split Out
+      // produces 0 items so Respond to Webhook never fires).
+      if (!text) {
+        setSearchStatus({ type: 'success', message: 'No people found for the selected organizations' });
+        setIsLoading(false);
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Webhook returned invalid JSON: ${text.slice(0, 200)}`);
+      }
 
       let allPeople = [];
       if (data.people && Array.isArray(data.people)) {
@@ -315,7 +328,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
       );
 
       if (newPeople.length > 0) {
-        setSelectedPeople(new Set(newPeople.map((p, i) => p.id || `idx-${i}`)));
+        setSelectedPeople(new Set(newPeople.filter(p => p.email).map((p, i) => p.id || `idx-${i}`)));
         setFoundPeopleModal({ show: true, people: newPeople });
         if (newPeople.length < limitedPeople.length) {
           const skipped = limitedPeople.length - newPeople.length;
@@ -323,6 +336,8 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         }
       } else if (limitedPeople.length > 0) {
         setSearchStatus({ type: 'success', message: `All ${limitedPeople.length} found people are already in Pipedrive` });
+      } else {
+        setSearchStatus({ type: 'success', message: 'No people found for the selected organizations' });
       }
     } catch (error) {
       console.error('Error searching for people:', error);
@@ -342,7 +357,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   };
 
   const selectAllFoundPeople = () => {
-    setSelectedPeople(new Set(foundPeopleModal.people.map((p, i) => p.id || `idx-${i}`)));
+    setSelectedPeople(new Set(foundPeopleModal.people.filter(p => p.email).map((p, i) => p.id || `idx-${i}`)));
   };
 
   const deselectAllFoundPeople = () => {
@@ -352,12 +367,17 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   const handleSaveFoundPeople = async () => {
     const peopleToSave = foundPeopleModal.people.filter((p, i) => selectedPeople.has(p.id || `idx-${i}`));
     if (peopleToSave.length === 0) return;
+
+    // Double-check: only send people that actually have an email
+    const withEmail = peopleToSave.filter(p => p.email);
+    if (withEmail.length === 0) return;
+
     setIsSaving(true);
     try {
       await fetch('https://aigeneers.app.n8n.cloud/webhook/save-people', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ people: peopleToSave, pipedrive_org_mapping: currentOrgMapping })
+        body: JSON.stringify({ people: withEmail, pipedrive_org_mapping: currentOrgMapping })
       });
       setFoundPeopleModal({ show: false, people: [] });
       await fetchPipedrivePersons();
@@ -424,7 +444,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
       }
       if (data.skipped > 0) {
         const skippedPart = `${data.skipped} already existed`;
-        message = message ? `${message} (${skippedPart})` : `All ${data.skipped} selected people are already leads`;
+        message = message ? `${message} (${skippedPart})` : `${data.skipped === 1 ? 'This person already has a lead' : `All ${data.skipped} people already have leads`}`;
       }
 
       setMakeLeadStatus({
@@ -590,7 +610,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                         return (
                           <tr
                             key={org.id}
-                            style={{ cursor: 'pointer', opacity: isSelected ? 1 : 0.45 }}
+                            style={{ cursor: 'pointer' }}
                             onClick={() => handleOrgSelection(org.id)}
                           >
                             <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
@@ -800,18 +820,20 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                     const headline = person.headline || person.title || '';
                     const truncated = headline.length > 60 ? headline.substring(0, 60) + '…' : headline;
                     const linkedin = person.linkedin_url || '';
+                    const hasEmail = !!person.email;
                     return (
                       <tr
                         key={key}
-                        style={{ cursor: 'pointer', opacity: isSelected ? 1 : 0.45 }}
-                        onClick={() => togglePersonSelection(key)}
+                        style={{ cursor: hasEmail ? 'pointer' : 'default', opacity: hasEmail ? 1 : 0.55 }}
+                        onClick={() => hasEmail && togglePersonSelection(key)}
                       >
                         <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => togglePersonSelection(key)}
-                            style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                            disabled={!hasEmail}
+                            onChange={() => hasEmail && togglePersonSelection(key)}
+                            style={{ cursor: hasEmail ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }}
                           />
                         </td>
                         <td><strong>{person.name || '-'}</strong></td>
@@ -826,7 +848,9 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                             </span>
                           ) : (truncated || '-')}
                         </td>
-                        <td style={{ fontSize: '0.9em' }}>{person.email || '-'}</td>
+                        <td style={{ fontSize: '0.9em' }}>
+                          {person.email || <span style={{ color: 'var(--error-color)', fontWeight: 500, fontSize: '0.8em' }}>No email</span>}
+                        </td>
                         <td>
                           {linkedin ? (
                             <a
@@ -847,7 +871,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
             </div>
             <div style={{ padding: '1rem 1.5rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>
-                {selectedPeople.size} of {foundPeopleModal.people.length} selected
+                {selectedPeople.size} of {foundPeopleModal.people.filter(p => p.email).length} with email selected
               </span>
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <button className="btn btn-secondary" onClick={() => setFoundPeopleModal({ show: false, people: [] })}>
