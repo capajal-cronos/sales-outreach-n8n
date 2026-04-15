@@ -19,45 +19,100 @@
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all var(--duration-fast) ease;
   text-align: left;
   width: 100%;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.8);
   font-family: var(--font-body);
   font-size: 0.875rem;
   font-weight: 500;
+  position: relative;
+  overflow: hidden;
+  transition:
+    color 250ms var(--ease-out),
+    transform 250ms var(--ease-out),
+    box-shadow 250ms var(--ease-out);
 }
 
-.workflow-step:hover {
-  color: var(--text-primary);
+/* Warm sliding highlight on hover */
+.workflow-step::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(196, 149, 106, 0.18), rgba(255, 255, 255, 0.08));
+  opacity: 0;
+  transform: translateX(-100%);
+  transition:
+    transform 300ms var(--ease-out),
+    opacity 200ms ease;
+  pointer-events: none;
 }
 
-.workflow-step.active {
-  background-color: var(--bg-surface);
+/* Parent-child selector overrides base button:hover:not(:disabled) specificity */
+.workflow-nav .workflow-step:hover {
+  background: none;
+  color: #FFFFFF;
+  transform: translateX(4px);
+}
+
+.workflow-nav .workflow-step:hover::before {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.workflow-nav .workflow-step:active {
+  transform: translateX(4px) scale(0.98);
+}
+
+.workflow-nav .workflow-step.active {
+  background: rgba(255, 255, 255, 0.93);
   color: var(--text-primary);
   font-weight: 600;
-  box-shadow: var(--shadow-sm);
+  transform: translateX(4px);
+  box-shadow:
+    0 2px 8px rgba(28, 25, 23, 0.12),
+    inset 3px 0 0 var(--accent-color);
+}
+
+.workflow-nav .workflow-step.active:hover {
+  background: rgba(255, 255, 255, 0.97);
+  transform: translateX(6px);
+  box-shadow:
+    0 4px 12px rgba(28, 25, 23, 0.14),
+    inset 3px 0 0 var(--accent-color);
+}
+
+.workflow-nav .workflow-step.active::before {
+  display: none;
 }
 
 .step-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  position: relative;
 }
 
 .step-badge {
   font-size: 0.6875rem;
   font-weight: 600;
-  background-color: var(--accent-light);
-  color: var(--accent-dark);
+  background-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
   padding: 0.125rem 0.5rem;
   border-radius: 10px;
   flex-shrink: 0;
+  position: relative;
+  transition: transform 200ms var(--ease-out);
+}
+
+.workflow-step:hover .step-badge {
+  transform: scale(1.06);
 }
 
 .workflow-step.active .step-badge {
   background-color: var(--primary-light);
   color: var(--primary-color);
+  transform: none;
 }
 
 /* ── Mobile: horizontal compact row ── */

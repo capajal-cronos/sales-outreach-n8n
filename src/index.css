@@ -13,7 +13,7 @@
 
   /* Warm neutral palette */
   --bg-page: #F8F7F6;
-  --bg-sidebar: #DED5CA;
+  --bg-sidebar: #6e625b;
   --bg-surface: #FFFFFF;
   --bg-muted: #F1F0EE;
   --bg-hover: #E8E3DE;
@@ -161,4 +161,35 @@ button:focus-visible {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
+}
+
+/* ── Shared Loading Spinner ── */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3.5rem 1.5rem;
+  background: var(--bg-muted);
+  border-radius: var(--radius-lg);
+  margin: 1.25rem 0;
+}
+
+.loading-container p {
+  margin-top: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.spinner-large {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

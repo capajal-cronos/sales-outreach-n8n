@@ -8,8 +8,17 @@
 .app-sidebar {
   width: 280px;
   min-height: 100vh;
-  background-color: var(--bg-sidebar);
-  border-right: 1px solid var(--border-subtle);
+  background: radial-gradient(
+    circle at 80% 15%, /* Skews the light source to the right and slightly down */
+    #52463e 0%,      /* Brighter "hit" of light */
+    #3a312c 70%,     /* Your original base */
+    #241e1b 100%     /* Deeper shadow for better depth */
+  );
+  border-right: none;
+  box-shadow:
+    3px 0 8px rgba(196, 149, 106, 0.06),
+    6px 0 20px rgba(28, 25, 23, 0.10),
+    12px 0 40px rgba(28, 25, 23, 0.06);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -17,31 +26,36 @@
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  z-index: 10;
 }
+
 
 .sidebar-brand {
   padding: 1.75rem 1.5rem 1.25rem;
+  background: linear-gradient(180deg, rgba(196, 149, 106, 0.10) 0%, transparent 100%);
 }
 
 .sidebar-brand h1 {
   font-size: 1.25rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #FFFFFF;
   letter-spacing: -0.03em;
   margin: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 .sidebar-tagline {
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.55);
   margin: 0.25rem 0 0;
   font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
 .sidebar-divider {
   height: 1px;
-  background: var(--border-color);
-  margin: 0 1.5rem;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+  margin: 0 1.25rem;
 }
 
 .app-main {
@@ -220,8 +234,9 @@
     height: auto;
     position: relative;
     border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
+    box-shadow: 0 4px 16px rgba(28, 25, 23, 0.10);
   }
+
 
   .sidebar-brand {
     display: flex;

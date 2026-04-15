@@ -5,6 +5,26 @@ import './EmailCampaign.css';
 const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook/send-leads-mails';
 const EXCLUDED_LABELS = ['answered', 'last_mail', 'last mail'];
 
+const DEFAULT_EMAIL_PROMPT = `Write a personalized cold email.
+
+Sender:
+Name: {sender_name}
+Company: Cronos
+
+Lead data:
+First name: {first_name}
+Last name: {last_name}
+Company: {company_name}
+Website summary: {company_summary}
+
+Email stage: {email_stage}
+
+Write the email appropriate for this stage:
+- first_mail → intro
+- second_mail → follow-up
+- third_mail → bump
+- last_mail → final goodbye`;
+
 function timeAgo(dateStr) {
   if (!dateStr) return '-';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -25,6 +45,8 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   const [labelMapping, setLabelMapping] = useState({});
   const [pendingEmails, setPendingEmails] = useState([]);
   const [editingEmail, setEditingEmail] = useState(null); // { ...email, editSubject, editBody }
+  const [emailPrompt, setEmailPrompt] = useState(DEFAULT_EMAIL_PROMPT);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
   const hasFetchedRef = useRef(false);
 
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
@@ -121,7 +143,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
       const res = await fetch(N8N_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'manual', timestamp: new Date().toISOString(), leads: leadsToSend, totalLeads: leadsToSend.length })
+        body: JSON.stringify({ trigger: 'manual', timestamp: new Date().toISOString(), leads: leadsToSend, totalLeads: leadsToSend.length, prompt: emailPrompt })
       });
       if (res.ok) {
         onCampaignStarted(leadsToSend.map(l => l.id));
@@ -302,6 +324,29 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                 {isDeleting ? '...' : `Delete (${selectedLeads.length})`}
               </button>
             </div>
+          </div>
+
+          {/* Email Prompt Editor */}
+          <div className="prompt-editor-section">
+            <button className="btn-link prompt-toggle" onClick={() => setShowPromptEditor(prev => !prev)}>
+              {showPromptEditor ? '▾ Hide Email Prompt' : '▸ Customize Email Prompt'}
+            </button>
+            {showPromptEditor && (
+              <div className="prompt-editor">
+                <textarea
+                  className="prompt-textarea"
+                  value={emailPrompt}
+                  onChange={e => setEmailPrompt(e.target.value)}
+                  rows={14}
+                />
+                <div className="prompt-editor-footer">
+                  <small className="prompt-placeholders">
+                    {'Placeholders: {sender_name}, {first_name}, {last_name}, {company_name}, {company_summary}, {email_stage}'}
+                  </small>
+                  <button className="btn-link" onClick={() => setEmailPrompt(DEFAULT_EMAIL_PROMPT)}>Reset to default</button>
+                </div>
+              </div>
+            )}
           </div>
 
           {actionResult && (

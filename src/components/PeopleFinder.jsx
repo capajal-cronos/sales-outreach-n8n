@@ -24,6 +24,10 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   const [currentOrgMapping, setCurrentOrgMapping] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [selectedPeople, setSelectedPeople] = useState(new Set());
+  const [selectedPipedrivePeople, setSelectedPipedrivePeople] = useState(new Set());
+  const [isMakingLeads, setIsMakingLeads] = useState(false);
+  const [makeLeadStatus, setMakeLeadStatus] = useState(null);
+  const [isLoadingOrgs, setIsLoadingOrgs] = useState(true);
 
   // Ref to prevent double fetching in StrictMode
   const hasFetchedRef = useRef(false);
@@ -48,11 +52,12 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   }, [pipedrivePersons]);
 
   const fetchPipedriveOrganizations = async () => {
+    setIsLoadingOrgs(true);
     try {
       const response = await fetch(
         `https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
@@ -81,12 +86,14 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
               return org;
             })
           );
-          
+
           setPipedriveOrganizations(detailedOrgs);
         }
       }
     } catch (err) {
       console.error('Failed to fetch Pipedrive organizations:', err);
+    } finally {
+      setIsLoadingOrgs(false);
     }
   };
 
@@ -218,6 +225,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
 
     setIsLoading(true);
     setSearchStatus(null);
+    setFoundPeopleModal({ show: false, people: [] });
 
     try {
       // Get Apollo IDs from selected organizations
@@ -372,6 +380,65 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
     }));
   };
 
+  const togglePipedrivePersonSelection = (personId) => {
+    setSelectedPipedrivePeople(prev => {
+      const next = new Set(prev);
+      if (next.has(personId)) next.delete(personId);
+      else next.add(personId);
+      return next;
+    });
+  };
+
+  const toggleAllPipedrivePeople = () => {
+    setSelectedPipedrivePeople(prev => {
+      if (prev.size === pipedrivePersons.length) return new Set();
+      return new Set(pipedrivePersons.map(p => p.id));
+    });
+  };
+
+  const handleMakeLeads = async () => {
+    if (selectedPipedrivePeople.size === 0) return;
+    setIsMakingLeads(true);
+    setMakeLeadStatus(null);
+
+    try {
+      const selectedPersons = pipedrivePersons.filter(p => selectedPipedrivePeople.has(p.id));
+
+      const response = await fetch('https://aigeneers.app.n8n.cloud/webhook/make-leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          people: selectedPersons.map(p => ({
+            id: p.id,
+            name: p.name,
+            org_id: p.org_id?.value || null
+          }))
+        })
+      });
+
+      const data = await response.json();
+
+      let message = '';
+      if (data.creating > 0) {
+        message = `${data.creating} lead${data.creating !== 1 ? 's' : ''} created`;
+      }
+      if (data.skipped > 0) {
+        const skippedPart = `${data.skipped} already existed`;
+        message = message ? `${message} (${skippedPart})` : `All ${data.skipped} selected people are already leads`;
+      }
+
+      setMakeLeadStatus({
+        type: data.creating > 0 ? 'success' : 'error',
+        message: message || 'No leads to create'
+      });
+      setSelectedPipedrivePeople(new Set());
+    } catch (error) {
+      setMakeLeadStatus({ type: 'error', message: `Failed to create leads: ${error.message}` });
+    } finally {
+      setIsMakingLeads(false);
+    }
+  };
+
   return (
     <div className="people-finder">
       <div className="section-header">
@@ -387,11 +454,38 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         </div>
       ) : pipedrivePersons.length > 0 && (
         <div className="pipedrive-people">
-          <h3>People in Pipedrive ({pipedrivePersons.length})</h3>
+          <div className="section-header-with-actions">
+            <h3>People in Pipedrive ({pipedrivePersons.length})</h3>
+            <div className="selection-actions">
+              <button className="btn-link" onClick={toggleAllPipedrivePeople}>
+                {selectedPipedrivePeople.size === pipedrivePersons.length ? 'Deselect All' : 'Select All'}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleMakeLeads}
+                disabled={selectedPipedrivePeople.size === 0 || isMakingLeads}
+              >
+                {isMakingLeads ? 'Creating...' : `Make Lead (${selectedPipedrivePeople.size})`}
+              </button>
+            </div>
+          </div>
+          {makeLeadStatus && (
+            <p className={`search-status search-status--${makeLeadStatus.type}`}>
+              {makeLeadStatus.message}
+            </p>
+          )}
           <div className="pipedrive-table-container">
             <table className="pipedrive-table">
               <thead>
                 <tr>
+                  <th style={{ width: '40px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedPipedrivePeople.size === pipedrivePersons.length && pipedrivePersons.length > 0}
+                      onChange={toggleAllPipedrivePeople}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                    />
+                  </th>
                   <th>Name</th>
                   <th>Headline</th>
                   <th>Email</th>
@@ -404,9 +498,18 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                 {pipedrivePersons.map(person => {
                   const headline = person.headline || '';
                   const linkedinUrl = person.linkedin_url || '';
+                  const isSelected = selectedPipedrivePeople.has(person.id);
 
                   return (
-                    <tr key={person.id}>
+                    <tr key={person.id} style={{ cursor: 'pointer' }} onClick={() => togglePipedrivePersonSelection(person.id)}>
+                      <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => togglePipedrivePersonSelection(person.id)}
+                          style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                        />
+                      </td>
                       <td><strong>{person.name}</strong></td>
                       <td style={{ fontSize: '0.9em', color: '#666' }}>
                         {person._detailFetchFailed ? (
@@ -414,7 +517,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                         ) : headline ? (
                           <span
                             style={{ cursor: 'pointer', color: 'var(--primary-color)' }}
-                            onClick={() => setHeadlineModal({ show: true, headline, name: person.name })}
+                            onClick={(e) => { e.stopPropagation(); setHeadlineModal({ show: true, headline, name: person.name }); }}
                             title="Click to read full headline"
                           >
                             {headline}
@@ -428,7 +531,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                         {person._detailFetchFailed ? (
                           <span style={{ color: 'orange' }}>Failed to load</span>
                         ) : linkedinUrl ? (
-                          <a href={linkedinUrl.startsWith('http') ? linkedinUrl : `https://${linkedinUrl}`} target="_blank" rel="noopener noreferrer">
+                          <a href={linkedinUrl.startsWith('http') ? linkedinUrl : `https://${linkedinUrl}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
                             LinkedIn
                           </a>
                         ) : '-'}
@@ -456,12 +559,25 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                 </div>
               </div>
               
-              {pipedriveOrganizations.length > 0 ? (
+              {isLoadingOrgs ? (
+                <div className="loading-container">
+                  <div className="spinner-large"></div>
+                  <p>Loading organizations from Pipedrive...</p>
+                </div>
+              ) : pipedriveOrganizations.length > 0 ? (
                 <div className="pipedrive-table-container" style={{ marginTop: '1rem' }}>
                   <table className="pipedrive-table">
                     <thead>
                       <tr>
-                        <th style={{ width: '50px' }}>Select</th>
+                        <th style={{ width: '40px', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            title={searchParams.selectedOrganizations.length === pipedriveOrganizations.length ? 'Deselect all' : 'Select all'}
+                            checked={searchParams.selectedOrganizations.length === pipedriveOrganizations.length && pipedriveOrganizations.length > 0}
+                            onChange={e => e.target.checked ? selectAllOrganizations() : deselectAllOrganizations()}
+                            style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                          />
+                        </th>
                         <th>Name</th>
                         <th>Website</th>
                         <th>LinkedIn</th>
@@ -469,39 +585,46 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                       </tr>
                     </thead>
                     <tbody>
-                      {pipedriveOrganizations.map(org => (
-                        <tr key={org.id}>
-                          <td style={{ textAlign: 'center' }}>
-                            <input
-                              type="checkbox"
-                              checked={searchParams.selectedOrganizations.includes(org.id)}
-                              onChange={() => handleOrgSelection(org.id)}
-                              style={{ cursor: 'pointer', width: '18px', height: '18px' }}
-                            />
-                          </td>
-                          <td><strong>{org.name}</strong></td>
-                          <td>
-                            {org.website ? (
-                              <a href={org.website.startsWith('http') ? org.website : `https://${org.website}`} target="_blank" rel="noopener noreferrer">
-                                {org.website}
-                              </a>
-                            ) : '-'}
-                          </td>
-                          <td>
-                            {org.linkedin ? (
-                              <a href={org.linkedin.startsWith('http') ? org.linkedin : `https://${org.linkedin}`} target="_blank" rel="noopener noreferrer">
-                                LinkedIn
-                              </a>
-                            ) : '-'}
-                          </td>
-                          <td>{org.people_count || 0}</td>
-                        </tr>
-                      ))}
+                      {pipedriveOrganizations.map(org => {
+                        const isSelected = searchParams.selectedOrganizations.includes(org.id);
+                        return (
+                          <tr
+                            key={org.id}
+                            style={{ cursor: 'pointer', opacity: isSelected ? 1 : 0.45 }}
+                            onClick={() => handleOrgSelection(org.id)}
+                          >
+                            <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleOrgSelection(org.id)}
+                                style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                              />
+                            </td>
+                            <td><strong>{org.name}</strong></td>
+                            <td>
+                              {org.website ? (
+                                <a href={org.website.startsWith('http') ? org.website : `https://${org.website}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+                                  {org.website}
+                                </a>
+                              ) : '-'}
+                            </td>
+                            <td>
+                              {org.linkedin ? (
+                                <a href={org.linkedin.startsWith('http') ? org.linkedin : `https://${org.linkedin}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+                                  LinkedIn
+                                </a>
+                              ) : '-'}
+                            </td>
+                            <td>{org.people_count || 0}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <p style={{ color: '#666', padding: '1rem' }}>Loading organizations from Pipedrive...</p>
+                <p style={{ color: 'var(--text-secondary)', padding: '1rem' }}>No organizations found in Pipedrive.</p>
               )}
             </div>
 

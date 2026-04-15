@@ -57,6 +57,18 @@ app.delete('/api/apollo/pending', async (req, res) => {
   await handleClearApolloPending(req, res);
 });
 
+// n8n callback: organization successfully added to Pipedrive
+app.post('/api/organization/success', (req, res) => {
+  console.log('✅ Organization added to Pipedrive:', req.body.name, req.body.domain);
+  res.json({ success: true });
+});
+
+// n8n callback: organization failed to be added to Pipedrive
+app.post('/api/organization/error', (req, res) => {
+  console.error('❌ Organization failed:', req.body.name, req.body.error);
+  res.json({ success: true });
+});
+
 // Get leads from Pipedrive
 app.get('/api/leads', async (req, res) => {
   try {
