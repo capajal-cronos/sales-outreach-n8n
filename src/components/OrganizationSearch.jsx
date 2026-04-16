@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import './OrganizationSearch.css';
 
 function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflowErrors = [], onDismissError }) {
@@ -34,6 +35,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   };
 
   const [uploadedFile, setUploadedFile] = useState(null);
+  const [parsedDomains, setParsedDomains] = useState([]); // domains extracted from file
+  const [skippedDomains, setSkippedDomains] = useState([]); // domains already in Pipedrive
+  const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
@@ -218,19 +222,146 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     });
   };
 
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      const validTypes = ['.csv', '.xlsx', '.txt'];
-      const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      
-      if (validTypes.includes(fileExtension)) {
-        setUploadedFile(file);
-        setError(null);
-      } else {
-        setError('Please upload a valid file (.csv, .xlsx, or .txt)');
-        setUploadedFile(null);
+  // Check if a string looks like a domain
+  const looksLikeDomain = (str) => {
+    if (!str || typeof str !== 'string') return false;
+    const cleaned = str.trim().toLowerCase();
+    if (!cleaned || cleaned.includes(' ') && !cleaned.includes('://')) return false;
+    // Strip protocol/www to test the core
+    const core = cleaned.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].split(':')[0];
+    // Must have at least one dot and a TLD-like part
+    const parts = core.split('.');
+    if (parts.length < 2) return false;
+    const tld = parts[parts.length - 1];
+    return tld.length >= 2 && tld.length <= 12 && /^[a-z]+$/.test(tld);
+  };
+
+  // Parse a file and extract the domain column
+  const parseFileForDomains = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        try {
+          let rows = [];
+          const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
+          if (ext === '.csv') {
+            const text = e.target.result;
+            rows = text.split(/\r?\n/).filter(line => line.trim()).map(line => line.split(/[,;\t]/));
+          } else if (ext === '.xlsx') {
+            const workbook = XLSX.read(e.target.result, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+          }
+
+          if (rows.length === 0) { resolve([]); return; }
+
+          // Find which column has domains — score each column
+          const numCols = Math.max(...rows.map(r => r.length));
+          let bestCol = 0;
+          let bestScore = 0;
+
+          // Check header row for hints first
+          const headerRow = rows[0].map(c => String(c || '').toLowerCase().trim());
+          const domainHeaders = ['domain', 'website', 'url', 'web', 'site', 'homepage'];
+          const headerIdx = headerRow.findIndex(h => domainHeaders.some(dh => h.includes(dh)));
+          if (headerIdx >= 0) {
+            bestCol = headerIdx;
+            bestScore = Infinity; // header match wins
+          }
+
+          if (bestScore === 0) {
+            // No header match — count domain-like values per column
+            for (let col = 0; col < numCols; col++) {
+              let score = 0;
+              for (let row = 0; row < rows.length; row++) {
+                if (looksLikeDomain(String(rows[row][col] || ''))) score++;
+              }
+              if (score > bestScore) { bestScore = score; bestCol = col; }
+            }
+          }
+
+          // Extract domains from the winning column, skip header if it's a label
+          const startRow = looksLikeDomain(String(rows[0][bestCol] || '')) ? 0 : 1;
+          const domains = [];
+          const seen = new Set();
+          for (let i = startRow; i < rows.length; i++) {
+            const raw = String(rows[i][bestCol] || '').trim();
+            if (!raw) continue;
+            const domain = cleanDomain(raw);
+            if (domain && !seen.has(domain)) {
+              seen.add(domain);
+              domains.push(domain);
+            }
+          }
+
+          resolve(domains);
+        } catch (err) {
+          reject(err);
+        }
+      };
+
+      reader.onerror = () => reject(new Error('Failed to read file'));
+
+      if (file.name.endsWith('.xlsx')) {
+        reader.readAsArrayBuffer(file);
+      } else if (file.name.endsWith('.csv')) {
+        reader.readAsText(file);
       }
+    });
+  };
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const validTypes = ['.csv', '.xlsx'];
+    const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
+    if (!validTypes.includes(fileExtension)) {
+      setError('Please upload a .csv or .xlsx file');
+      setUploadedFile(null);
+      setParsedDomains([]);
+      setSkippedDomains([]);
+      return;
+    }
+
+    setUploadedFile(file);
+    setError(null);
+
+    try {
+      const allDomains = await parseFileForDomains(file);
+      if (allDomains.length === 0) {
+        setError('No domains found in this file');
+        setParsedDomains([]);
+        setSkippedDomains([]);
+        return;
+      }
+
+      // Filter out domains already in Pipedrive
+      const existingDomains = new Set(
+        pipedriveOrganizations
+          .map(org => cleanDomain(org.website || org.domain || ''))
+          .filter(Boolean)
+      );
+
+      const newDomains = [];
+      const skipped = [];
+      for (const domain of allDomains) {
+        if (existingDomains.has(domain)) {
+          skipped.push(domain);
+        } else {
+          newDomains.push(domain);
+        }
+      }
+
+      setParsedDomains(newDomains);
+      setSkippedDomains(skipped);
+    } catch (err) {
+      setError('Failed to parse file: ' + err.message);
+      setParsedDomains([]);
+      setSkippedDomains([]);
     }
   };
 
@@ -243,25 +374,18 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     try {
       let requestBody;
 
-      if (searchMode === 'file' && uploadedFile) {
-        // File upload mode - read file content and send as JSON
-        const fileContent = await readFileContent(uploadedFile);
-        const fileExtension = uploadedFile.name.substring(uploadedFile.name.lastIndexOf('.')).toLowerCase();
-        
-        requestBody = {
-          fileContent: fileContent,
-          fileName: uploadedFile.name,
-          fileType: fileExtension
-        };
-        
-        
-        // Send file content to dedicated file webhook
+      if (searchMode === 'file') {
+        // File upload mode - send parsed domains
+        if (parsedDomains.length === 0) {
+          setError('No new domains to search. Upload a file with domains not already in Pipedrive.');
+          setIsLoading(false);
+          return;
+        }
+
         const response = await fetch(N8N_FILE_WEBHOOK_URL, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody)
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domains: parsedDomains })
         });
 
         if (!response.ok) {
@@ -269,10 +393,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         }
 
         const data = await response.json();
-        
-        // Handle the response from n8n
+
         let organizations = [];
-        
         if (data.organizations && Array.isArray(data.organizations)) {
           organizations = data.organizations;
         } else if (data.success && data.data) {
@@ -282,7 +404,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         } else if (data.success !== false) {
           organizations = data.data ? [data.data] : [];
         }
-        
+
         setSearchResults(organizations);
         setIsLoading(false);
         return;
@@ -454,31 +576,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     return numValue;
   };
 
-  const readFileContent = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      
-      reader.onload = (e) => {
-        const content = e.target.result;
-        
-        if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
-          // For CSV/TXT, send as text
-          resolve(content);
-        } else if (file.name.endsWith('.xlsx')) {
-          // For XLSX, send as base64
-          resolve(content.split(',')[1]); // Remove data:application/... prefix
-        }
-      };
-      
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      
-      if (file.name.endsWith('.xlsx')) {
-        reader.readAsDataURL(file);
-      } else {
-        reader.readAsText(file);
-      }
-    });
-  };
 
   const handleSaveToPipedrive = () => {
     updateWorkflowData('organizations', searchResults);
@@ -508,6 +605,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
       maxPages: 4
     });
     setUploadedFile(null);
+    setParsedDomains([]);
+    setSkippedDomains([]);
     setIndustryTagsInput('');
     setLocationInput('');
     setSearchResults([]);
@@ -661,6 +760,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     // Clear file when switching modes
     if (mode !== 'file') {
       setUploadedFile(null);
+      setParsedDomains([]);
+      setSkippedDomains([]);
     }
   };
 
@@ -885,7 +986,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
       {/* Search Mode Toggle */}
       
       <div style={{ marginTop: '2rem', marginBottom: '1rem' }}>
-        <h3>Choose your search method: manual entry, file upload, or filter-based search</h3>
+        <h3>Choose your search method</h3>
       </div>
 
       <div className="search-mode-toggle">
@@ -920,39 +1021,109 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           <>
             {/* File Upload Section */}
             <div className="form-section">
-              <h3>Upload Organization List</h3>
-              <div className="file-upload-area">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,.xlsx,.txt"
-                  onChange={handleFileUpload}
-                  style={{ display: 'none' }}
-                />
-                <button 
-                  className="btn btn-secondary"
+              <h3>Upload Domains</h3>
+              <p className="form-section-hint">We'll auto-detect the domain column from your file</p>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx"
+                onChange={handleFileUpload}
+                style={{ display: 'none' }}
+              />
+
+              {!uploadedFile ? (
+                <div
+                  className={`file-dropzone${isDragging ? ' dragging' : ''}`}
                   onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const file = e.dataTransfer.files[0];
+                    if (file) {
+                      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                      if (['.csv', '.xlsx'].includes(ext)) {
+                        // Trigger the same parsing flow
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        fileInputRef.current.files = dt.files;
+                        fileInputRef.current.dispatchEvent(new Event('change', { bubbles: true }));
+                      } else {
+                        setError('Please upload a .csv or .xlsx file');
+                      }
+                    }
+                  }}
                 >
-                  Choose File
-                </button>
-                {uploadedFile && (
-                  <div className="file-info">
-                    <span className="file-name">{uploadedFile.name}</span>
-                    <button 
-                      className="btn-icon"
-                      onClick={() => setUploadedFile(null)}
-                      title="Remove file"
-                    >
-                      ✕
-                    </button>
+                  <div className="dropzone-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="12" y1="18" x2="12" y2="12"/>
+                      <line x1="9" y1="15" x2="12" y2="12"/>
+                      <line x1="15" y1="15" x2="12" y2="12"/>
+                    </svg>
                   </div>
-                )}
-                <p className="file-help">
-                  Supported formats: CSV, XLSX, TXT<br/>
-                  <small><strong>Required columns:</strong> name (optional), domain (mandatory)</small><br/>
-                  <small>File should contain 2 columns: name and domain. Only domain is required.</small>
-                </p>
-              </div>
+                  <span className="dropzone-label">Drop your file here or <span className="dropzone-browse">browse</span></span>
+                  <span className="dropzone-formats">.csv or .xlsx</span>
+                </div>
+              ) : (
+                <div className="file-attached">
+                  <div className="file-attached-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                  </div>
+                  <div className="file-attached-details">
+                    <span className="file-attached-name">{uploadedFile.name}</span>
+                    <span className="file-attached-meta">
+                      {(uploadedFile.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                  <button
+                    className="file-attached-remove"
+                    onClick={() => {
+                      setUploadedFile(null);
+                      setParsedDomains([]);
+                      setSkippedDomains([]);
+                      fileInputRef.current.value = '';
+                    }}
+                    title="Remove file"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {uploadedFile && (parsedDomains.length > 0 || skippedDomains.length > 0) && (
+                <div className="parsed-domains-summary">
+                  <div className="domain-count-row">
+                    <span className="domain-count-new">{parsedDomains.length} new</span>
+                    {skippedDomains.length > 0 && (
+                      <span className="domain-count-skipped">{skippedDomains.length} skipped (in Pipedrive)</span>
+                    )}
+                  </div>
+                  {parsedDomains.length > 0 && (
+                    <div className="parsed-domain-list">
+                      {parsedDomains.map((d, i) => (
+                        <span key={i} className="domain-tag">{d}</span>
+                      ))}
+                    </div>
+                  )}
+                  {skippedDomains.length > 0 && (
+                    <details className="skipped-details">
+                      <summary>Show skipped</summary>
+                      <div className="parsed-domain-list">
+                        {skippedDomains.map((d, i) => (
+                          <span key={i} className="domain-tag skipped">{d}</span>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
             </div>
           </>
         ) : searchMode === 'manual' ? (
@@ -987,8 +1158,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
               <div className="form-section">
                 <div className="settings-row" style={{ gap: '2rem', alignItems: 'flex-start' }}>
                   <div className="setting-item" style={{ flex: 2 }}>
-                    <h3 style={{ margin: '0 0 0.25rem' }}>Location</h3>
-                    <p className="form-section-hint" style={{ marginBottom: '0.5rem' }}>Type or select countries</p>
+                    <h3>Location</h3>
+                    <p className="form-section-hint">Type or select countries</p>
                     {searchParams.organizationLocations.length > 0 && (
                       <div className="pill-group" style={{ marginBottom: '0.5rem' }}>
                         {searchParams.organizationLocations.map((loc, idx) => (
@@ -1047,8 +1218,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                     </div>
                   </div>
                   <div className="setting-item">
-                    <h3 style={{ margin: '0 0 0.25rem' }}>Amount</h3>
-                    <p className="form-section-hint" style={{ marginBottom: '0.5rem' }}>Results per page</p>
+                    <h3>Results</h3>
+                    <p className="form-section-hint">How many organizations to return</p>
                     <div className="limit-input-row">
                       <input
                         type="number"
@@ -1073,9 +1244,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                           }
                         }}
                       />
-                      <span>per page</span>
                     </div>
-                    <div className="setting-hint">1–50 organizations</div>
+                    <div className="setting-hint">max 50</div>
                   </div>
                 </div>
               </div>
@@ -1208,7 +1378,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
               </div>
 
               <div className="form-section">
-                <h3>Amount</h3>
+                <h3>Results</h3>
+                <p className="form-section-hint">How many organizations to return</p>
                 <div className="settings-row">
                   <div className="setting-item">
                     <div className="limit-input-row">
@@ -1235,9 +1406,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                           }
                         }}
                       />
-                      <span>results per page</span>
                     </div>
-                    <div className="setting-hint">1–50 organizations per page</div>
+                    <div className="setting-hint">max 50</div>
                   </div>
                 </div>
               </div>
@@ -1259,7 +1429,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           <button
             className="btn btn-primary"
             onClick={handleSearch}
-            disabled={isLoading || isWaitingForResults || (searchMode === 'file' && !uploadedFile)}
+            disabled={isLoading || isWaitingForResults || (searchMode === 'file' && parsedDomains.length === 0)}
           >
             {isLoading || isWaitingForResults ? 'Searching...' : 'Search Organizations'}
           </button>

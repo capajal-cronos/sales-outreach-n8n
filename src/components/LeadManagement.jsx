@@ -39,7 +39,6 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   const [filter, setFilter] = useState('all');
   const [isLoading, setIsLoading] = useState((workflowData.leads || []).length === 0);
   const [selectedLeads, setSelectedLeads] = useState([]);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [actionResult, setActionResult] = useState(null);
   const [labelMapping, setLabelMapping] = useState({});
@@ -47,6 +46,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   const [editingEmail, setEditingEmail] = useState(null); // { ...email, editSubject, editBody }
   const [emailPrompt, setEmailPrompt] = useState(DEFAULT_EMAIL_PROMPT);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [cooldownDays, setCooldownDays] = useState('');
   const hasFetchedRef = useRef(false);
 
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
@@ -120,19 +120,34 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   };
 
   const isExcluded = (lead) => EXCLUDED_LABELS.includes((lead.label || '').toLowerCase());
+  const isAnswered = (lead) => (lead.label || '').toLowerCase() === 'answered';
+  const isLastMail = (lead) => ['last_mail', 'last mail'].includes((lead.label || '').toLowerCase());
 
-  const filteredLeads = filter === 'all'
+  const isCoolingDown = (lead) => {
+    const days = parseInt(cooldownDays) || 0;
+    if (days <= 0) return false;
+    if (isExcluded(lead)) return false;
+    if (!lead.label || lead.label === 'no_label') return false;
+    if (!lead.updatedAt) return false;
+    const daysSinceContact = (Date.now() - new Date(lead.updatedAt).getTime()) / 86400000;
+    return daysSinceContact < days;
+  };
+
+  const sortOrder = (lead) => isLastMail(lead) ? 2 : isAnswered(lead) ? 1 : 0;
+
+  const filteredLeads = (filter === 'all'
     ? leads
-    : leads.filter(l => (l.label_ids || []).some(id => String(id) === filter));
+    : leads.filter(l => (l.label_ids || []).some(id => String(id) === filter))
+  ).toSorted((a, b) => sortOrder(a) - sortOrder(b));
 
-  const eligibleLeads = leads.filter(l => !isExcluded(l));
+  const eligibleLeads = leads.filter(l => !isExcluded(l) && !isCoolingDown(l));
 
   const handleSelectLead = (id) => {
     setSelectedLeads(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const handleSelectAll = () => {
-    const selectable = filteredLeads.filter(l => !isExcluded(l) && !(l.id in campaignPendingLeads)).map(l => l.id);
+    const selectable = filteredLeads.filter(l => !isExcluded(l) && !isCoolingDown(l) && !(l.id in campaignPendingLeads)).map(l => l.id);
     setSelectedLeads(prev => prev.length === selectable.length ? [] : selectable);
   };
 
@@ -239,22 +254,10 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
     fetchPendingEmails();
   };
 
-  const handleDeleteLeads = async () => {
-    if (selectedLeads.length === 0) return;
-    if (!confirm(`Delete ${selectedLeads.length} lead(s) from Pipedrive?`)) return;
-    setIsDeleting(true);
-    await Promise.all(
-      selectedLeads.map(id =>
-        fetch(`https://api.pipedrive.com/v1/leads/${id}?api_token=${PIPEDRIVE_API_KEY}`, { method: 'DELETE' })
-      )
-    );
-    setSelectedLeads([]);
-    await fetchLeads();
-    setIsDeleting(false);
-  };
+
 
   const pendingCount = Object.keys(campaignPendingLeads).length;
-  const selectableInView = filteredLeads.filter(l => !isExcluded(l) && !(l.id in campaignPendingLeads));
+  const selectableInView = filteredLeads.filter(l => !isExcluded(l) && !isCoolingDown(l) && !(l.id in campaignPendingLeads));
   const allSelected = selectableInView.length > 0 && selectableInView.every(l => selectedLeads.includes(l.id));
 
   return (
@@ -318,34 +321,46 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
               >
                 Campaign for all ({eligibleLeads.length})
               </button>
-              <button
-                className="btn btn-danger"
-                onClick={handleDeleteLeads}
-                disabled={selectedLeads.length === 0 || isDeleting}
-              >
-                {isDeleting ? '...' : `Delete (${selectedLeads.length})`}
-              </button>
             </div>
           </div>
 
-          {/* Email Prompt Editor */}
+          {/* Campaign Settings */}
           <div className="prompt-editor-section">
             <button className="btn-link prompt-toggle" onClick={() => setShowPromptEditor(prev => !prev)}>
-              {showPromptEditor ? '▾ Hide Email Prompt' : '▸ Customize Email Prompt'}
+              {showPromptEditor ? '▾ Hide Campaign Settings' : '▸ Campaign Settings'}
             </button>
             {showPromptEditor && (
-              <div className="prompt-editor">
-                <textarea
-                  className="prompt-textarea"
-                  value={emailPrompt}
-                  onChange={e => setEmailPrompt(e.target.value)}
-                  rows={14}
-                />
-                <div className="prompt-editor-footer">
-                  <small className="prompt-placeholders">
-                    {'Placeholders: {sender_name}, {first_name}, {last_name}, {company_name}, {company_summary}, {email_stage}'}
-                  </small>
-                  <button className="btn-link" onClick={() => setEmailPrompt(DEFAULT_EMAIL_PROMPT)}>Reset to default</button>
+              <div className="campaign-settings-card">
+                <div className="campaign-setting-group">
+                  <div className="campaign-setting-header">
+                    <label className="campaign-setting-label">Cooldown between emails</label>
+                    <span className="campaign-setting-hint">Minimum days before a lead can be emailed again</span>
+                  </div>
+                  <div className="cooldown-control">
+                    <button className="cooldown-btn" onClick={() => setCooldownDays(String(Math.max(0, (parseInt(cooldownDays) || 0) - 1)))} disabled={(parseInt(cooldownDays) || 0) <= 0}>-</button>
+                    <span className="cooldown-value">{parseInt(cooldownDays) || 0}</span>
+                    <button className="cooldown-btn" onClick={() => setCooldownDays(String(Math.min(10, (parseInt(cooldownDays) || 0) + 1)))} disabled={(parseInt(cooldownDays) || 0) >= 10}>+</button>
+                    <span className="cooldown-unit">days</span>
+                  </div>
+                </div>
+                <div className="campaign-settings-divider" />
+                <div className="campaign-setting-group">
+                  <div className="campaign-setting-header">
+                    <label className="campaign-setting-label">Email prompt</label>
+                    <span className="campaign-setting-hint">Template used by AI to generate outreach emails</span>
+                  </div>
+                  <textarea
+                    className="prompt-textarea"
+                    value={emailPrompt}
+                    onChange={e => setEmailPrompt(e.target.value)}
+                    rows={14}
+                  />
+                  <div className="prompt-editor-footer">
+                    <small className="prompt-placeholders">
+                      {'Placeholders: {sender_name}, {first_name}, {last_name}, {company_name}, {company_summary}, {email_stage}'}
+                    </small>
+                    <button className="btn-link" onClick={() => setEmailPrompt(DEFAULT_EMAIL_PROMPT)}>Reset to default</button>
+                  </div>
                 </div>
               </div>
             )}
@@ -379,12 +394,20 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                     : (lead.label_ids || []).map(id => labelMapping[id] || id).join(', ') || 'No Label';
                   const isPending = lead.id in campaignPendingLeads;
                   const excluded = isExcluded(lead);
-                  const disabled = isPending || excluded;
+                  const coolingDown = isCoolingDown(lead);
+                  const disabled = isPending || excluded || coolingDown;
+
+                  let disabledTitle;
+                  if (excluded) disabledTitle = 'Cannot campaign: answered or last mail stage';
+                  else if (coolingDown) {
+                    const daysAgo = Math.floor((Date.now() - new Date(lead.updatedAt).getTime()) / 86400000);
+                    disabledTitle = `Cooldown: contacted ${daysAgo}d ago, need ${parseInt(cooldownDays)}d between emails`;
+                  }
 
                   return (
                     <tr
                       key={lead.id}
-                      className={selectedLeads.includes(lead.id) ? 'selected' : ''}
+                      className={`${selectedLeads.includes(lead.id) ? 'selected' : ''}${isAnswered(lead) ? ' excluded-answered' : ''}${isLastMail(lead) ? ' excluded-lastmail' : ''}${coolingDown ? ' cooling-down' : ''}`}
                       style={isPending ? { opacity: 0.4, pointerEvents: 'none', backgroundColor: '#f0f0f0' } : {}}
                     >
                       <td>
@@ -393,7 +416,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                           checked={selectedLeads.includes(lead.id)}
                           onChange={() => handleSelectLead(lead.id)}
                           disabled={disabled}
-                          title={excluded ? 'Cannot campaign: answered or last mail stage' : undefined}
+                          title={disabledTitle}
                         />
                       </td>
                       <td>
@@ -401,7 +424,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                         {isPending && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>in campaign…</span>}
                       </td>
                       <td>{lead.organization || '-'}</td>
-                      <td>{lead.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : '-'}</td>
+                      <td>{lead.email || '-'}</td>
                       <td>
                         <span style={{ padding: '0.2rem 0.5rem', borderRadius: 4, backgroundColor: labelName !== 'No Label' ? '#e0e7ff' : 'transparent', fontSize: '0.85rem' }}>
                           {labelName}
@@ -414,6 +437,8 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
               </tbody>
             </table>
           </div>
+
+          <hr className="leads-section-divider" />
 
           {/* Processing indicator — show while more leads are pending than there are emails ready */}
           {pendingCount > pendingEmails.length && (
@@ -494,9 +519,10 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
           )}
 
           {pendingCount === 0 && pendingEmails.length === 0 && !actionResult && (
-            <p style={{ marginTop: '1.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              No pending emails. Select leads above and start a campaign.
-            </p>
+            <div className="empty-campaign-state">
+              <p className="empty-campaign-title">No emails queued yet</p>
+              <p className="empty-campaign-desc">Start a campaign to generate emails for review</p>
+            </div>
           )}
         </>
       )}

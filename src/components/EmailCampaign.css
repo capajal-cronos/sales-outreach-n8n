@@ -301,9 +301,96 @@
   background: var(--bg-card);
 }
 
-.prompt-editor {
+/* ── Campaign Settings Card ── */
+.campaign-settings-card {
   margin-top: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
   animation: slideIn 0.2s var(--ease-out);
+}
+
+.campaign-setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.campaign-setting-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.campaign-settings-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 1.25rem 0;
+}
+
+/* ── Cooldown Stepper ── */
+.cooldown-control {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.cooldown-btn {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  background: var(--bg-muted);
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+  font-family: var(--font-body);
+  line-height: 1;
+}
+
+.cooldown-btn:first-child {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.cooldown-btn:nth-child(3) {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.cooldown-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent-color);
+}
+
+.cooldown-btn:disabled {
+  cursor: not-allowed;
+  color: var(--text-tertiary);
+  background: var(--bg-surface);
+  border-color: var(--border-color);
+}
+
+.cooldown-value {
+  width: 2.5rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cooldown-unit {
+  margin-left: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
 }
 
 .prompt-textarea {
@@ -336,5 +423,37 @@
 
 .prompt-placeholders {
   font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* ── Section Divider ── */
+.leads-section-divider {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 2rem 0;
+}
+
+/* ── Empty Campaign State ── */
+.empty-campaign-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1.5rem;
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.empty-campaign-title {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.empty-campaign-desc {
+  margin: 0;
+  font-size: 0.8125rem;
   color: var(--text-tertiary);
 }

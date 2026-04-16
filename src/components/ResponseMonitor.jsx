@@ -7,7 +7,6 @@ function ResponseMonitor({ onPrevious }) {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [selected, setSelected] = useState(null);
   const [filterSender, setFilterSender] = useState('');
-  const [filterStage, setFilterStage] = useState('');
   useEffect(() => {
     fetchResponses();
     const interval = setInterval(fetchResponses, 10000);
@@ -19,6 +18,22 @@ function ResponseMonitor({ onPrevious }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  const formatTimeAgo = (dateStr) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
 
   const fetchResponses = async () => {
     try {
@@ -59,19 +74,6 @@ function ResponseMonitor({ onPrevious }) {
             value={filterSender}
             onChange={e => setFilterSender(e.target.value)}
           />
-          <select
-            className="filter-select"
-            value={filterStage}
-            onChange={e => setFilterStage(e.target.value)}
-          >
-            <option value="">All stages</option>
-            {[...new Set(responses.map(r => {
-              const s = r.stage && r.stage !== 'unknown' ? r.stage : '';
-              return s;
-            }).filter(Boolean))].sort().map(stage => (
-              <option key={stage} value={stage}>{stage.replace(/_/g, ' ')}</option>
-            ))}
-          </select>
         </div>
       )}
 
@@ -88,28 +90,25 @@ function ResponseMonitor({ onPrevious }) {
               <tr>
                 <th>Sender</th>
                 <th>Lead</th>
-                <th>Stage</th>
                 <th>Reply</th>
-                <th>Date</th>
+                <th>Received</th>
               </tr>
             </thead>
             <tbody>
               {responses.filter(response => {
                 const name = (response.person_name || response.from || '').toLowerCase();
-                const stage = response.stage && response.stage !== 'unknown' ? response.stage : '';
                 if (filterSender && !name.includes(filterSender.toLowerCase())) return false;
-                if (filterStage && stage !== filterStage) return false;
                 return true;
               }).map(response => {
                 const snippet = response.snippet || response.body || '';
                 const senderName = response.person_name || response.from || '(unknown)';
+                const dateStr = response.date || response.received_at;
                 return (
                   <tr key={response.id} className="reply-row" onClick={() => setSelected(response)}>
                     <td className="reply-sender">{senderName}</td>
                     <td className="reply-lead">{response.lead_title || '—'}</td>
-                    <td className="reply-stage">{response.stage && response.stage !== 'unknown' ? response.stage.replace(/_/g, ' ') : '—'}</td>
                     <td className="reply-preview">{snippet.substring(0, 100) || '(no text)'}</td>
-                    <td className="reply-date">{new Date(response.date || response.received_at).toLocaleString()}</td>
+                    <td className="reply-date" title={new Date(dateStr).toLocaleString()}>{formatTimeAgo(dateStr)}</td>
                   </tr>
                 );
               })}
@@ -127,8 +126,7 @@ function ResponseMonitor({ onPrevious }) {
                 <div className="reply-modal-meta">
                   {selected.person_name || selected.from}
                   {selected.lead_title && <span> · {selected.lead_title}</span>}
-                  {selected.stage && selected.stage !== 'unknown' && <span> · {selected.stage.replace(/_/g, ' ')}</span>}
-                  <span> · {new Date(selected.date || selected.received_at).toLocaleString()}</span>
+                  <span> · {formatTimeAgo(selected.date || selected.received_at)}</span>
                 </div>
               </div>
               <button className="reply-modal-close" onClick={() => setSelected(null)}>✕</button>

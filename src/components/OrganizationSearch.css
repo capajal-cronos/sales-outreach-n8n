@@ -273,6 +273,68 @@ input[type="number"]::-webkit-inner-spin-button {
   font-size: 0.8125rem;
 }
 
+/* ── Parsed domains summary ── */
+.parsed-domains-summary {
+  margin-top: 1.25rem;
+  padding: 1rem 1.25rem;
+  background-color: var(--bg-muted);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.domain-count-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.domain-count-new {
+  color: var(--success-color, #22c55e);
+}
+
+.domain-count-skipped {
+  color: var(--text-tertiary);
+}
+
+.parsed-domain-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.domain-tag {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.domain-tag.skipped {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.skipped-details {
+  margin-top: 0.5rem;
+}
+
+.skipped-details summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin-bottom: 0.375rem;
+}
+
+.skipped-details summary:hover {
+  color: var(--text-secondary);
+}
+
 .section-description {
   color: var(--text-secondary);
   font-size: 0.875rem;
@@ -303,6 +365,12 @@ input[type="number"]::-webkit-inner-spin-button {
 .form-section h3 {
   margin: 0 0 1.125rem 0;
   font-size: 1.1rem;
+}
+
+.form-section-hint {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin: 0 0 0.75rem;
 }
 
 .form-row {
