@@ -63,6 +63,21 @@
   margin-bottom: 0.5rem;
 }
 
+.pipedrive-orgs .filter-input {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--duration-fast) ease;
+}
+
+.pipedrive-orgs .filter-input:focus {
+  border-color: var(--accent);
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }

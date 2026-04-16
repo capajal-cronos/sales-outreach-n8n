@@ -28,6 +28,8 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   const [isMakingLeads, setIsMakingLeads] = useState(false);
   const [makeLeadStatus, setMakeLeadStatus] = useState(null);
   const [isLoadingOrgs, setIsLoadingOrgs] = useState(true);
+  const [peopleSearchQuery, setPeopleSearchQuery] = useState('');
+  const [orgSearchQuery, setOrgSearchQuery] = useState('');
 
   // Ref to prevent double fetching in StrictMode
   const hasFetchedRef = useRef(false);
@@ -233,11 +235,9 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         searchParams.selectedOrganizations.includes(org.id)
       );
 
-      const apolloIds = selectedOrgs
-        .map(org => org.apollo_id)
-        .filter(id => id);
+      const apolloOrgs = selectedOrgs.filter(org => org.apollo_id);
 
-      if (apolloIds.length === 0) {
+      if (apolloOrgs.length === 0) {
         setSearchStatus({ type: 'error', message: 'Selected organizations do not have Apollo IDs. Please ensure organizations are synced with Apollo.' });
         setIsLoading(false);
         return;
@@ -245,97 +245,106 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
 
       // Create mapping of Apollo ID to Pipedrive ID
       const orgMapping = {};
-      selectedOrgs.forEach(org => {
-        if (org.apollo_id) {
-          orgMapping[org.apollo_id] = org.id;
-        }
+      apolloOrgs.forEach(org => {
+        orgMapping[org.apollo_id] = org.id;
       });
 
       const peoplePerCompany = searchParams.peoplePerCompany || 5;
-      const perPage = Math.min(apolloIds.length * peoplePerCompany, 100);
 
-      const requestBody = {
-        organization_ids: apolloIds,
-        pipedrive_org_mapping: orgMapping,
-        page: 1,
-        per_page: perPage
-      };
-
-      if (searchParams.personTitles.length > 0) requestBody.person_titles = searchParams.personTitles;
-      if (searchParams.personSeniorities.length > 0) requestBody.person_seniorities = searchParams.personSeniorities;
-      if (searchParams.personDepartments.length > 0) requestBody.person_departments = searchParams.personDepartments;
-      if (searchParams.personLocations.length > 0) requestBody.person_locations = searchParams.personLocations;
-      if (searchParams.verifiedEmailOnly) requestBody.contact_email_status = ['verified'];
-
-      const response = await fetch('https://aigeneers.app.n8n.cloud/webhook/find-people', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const text = await response.text();
-      // n8n returns an empty body when Apollo finds 0 people (Split Out
-      // produces 0 items so Respond to Webhook never fires).
-      if (!text) {
-        setSearchStatus({ type: 'success', message: 'No people found for the selected organizations' });
-        setIsLoading(false);
-        return;
-      }
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(`Webhook returned invalid JSON: ${text.slice(0, 200)}`);
-      }
-
-      let allPeople = [];
-      if (data.people && Array.isArray(data.people)) {
-        allPeople = data.people;
-      } else if (data.contacts && Array.isArray(data.contacts)) {
-        allPeople = data.contacts;
-      } else if (data.success && data.data) {
-        allPeople = Array.isArray(data.data) ? data.data : [data.data];
-      } else if (Array.isArray(data)) {
-        allPeople = data.map(item => (item && item.json ? item.json : item));
-      }
-
-      // Limit per company. When organization_id is absent, fall back to a slot
-      // called '__unknown__' so it still respects the per-company cap.
-      const limitedPeople = [];
-      const companyCount = {};
-
-      for (const person of allPeople) {
-        const orgId = person.organization_id || person.organization?.id || '__unknown__';
-        companyCount[orgId] = companyCount[orgId] || 0;
-        if (companyCount[orgId] < peoplePerCompany) {
-          limitedPeople.push(person);
-          companyCount[orgId]++;
-        }
-      }
-
-      setCurrentOrgMapping(orgMapping);
-
-      // Filter out people already in Pipedrive (match by name, case-insensitive)
+      // Build set of existing names so we can skip duplicates
       const existingNames = new Set(
         pipedrivePersons.map(p => (p.name || '').trim().toLowerCase())
       );
-      const newPeople = limitedPeople.filter(
-        p => !existingNames.has((p.name || '').trim().toLowerCase())
-      );
 
-      if (newPeople.length > 0) {
-        setSelectedPeople(new Set(newPeople.filter(p => p.email).map((p, i) => p.id || `idx-${i}`)));
-        setFoundPeopleModal({ show: true, people: newPeople });
-        if (newPeople.length < limitedPeople.length) {
-          const skipped = limitedPeople.length - newPeople.length;
-          setSearchStatus({ type: 'success', message: `Found ${newPeople.length} new people (${skipped} already in Pipedrive)` });
+      // Shared search filters
+      const filterParams = {};
+      if (searchParams.personTitles.length > 0) filterParams.person_titles = searchParams.personTitles;
+      if (searchParams.personSeniorities.length > 0) filterParams.person_seniorities = searchParams.personSeniorities;
+      if (searchParams.personDepartments.length > 0) filterParams.person_departments = searchParams.personDepartments;
+      if (searchParams.personLocations.length > 0) filterParams.person_locations = searchParams.personLocations;
+      if (searchParams.verifiedEmailOnly) filterParams.contact_email_status = ['verified'];
+
+      // Search per organization so each company gets its own quota.
+      // Request exact amount first; only paginate if duplicates were filtered.
+      const parseWebhookResponse = (text) => {
+        if (!text) return [];
+        let data;
+        try { data = JSON.parse(text); } catch { return []; }
+
+        if (data.people && Array.isArray(data.people)) return data.people;
+        if (data.contacts && Array.isArray(data.contacts)) return data.contacts;
+        if (data.success && data.data) return Array.isArray(data.data) ? data.data : [data.data];
+        if (Array.isArray(data)) return data.map(item => (item && item.json ? item.json : item));
+        return [];
+      };
+
+      const fetchOrgPeople = async (org) => {
+        let collected = [];
+        let totalFromApollo = 0;
+        let page = 1;
+
+        while (collected.length < peoplePerCompany && page <= 3) {
+          const deficit = peoplePerCompany - collected.length;
+          // First page: request exact amount. Follow-ups: just the deficit.
+          const perPage = page === 1 ? peoplePerCompany : deficit;
+
+          const requestBody = {
+            organization_ids: [org.apollo_id],
+            pipedrive_org_mapping: { [org.apollo_id]: org.id },
+            page,
+            per_page: perPage,
+            ...filterParams
+          };
+
+          try {
+            const response = await fetch('https://aigeneers.app.n8n.cloud/webhook/find-people', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) break;
+
+            const people = parseWebhookResponse(await response.text());
+            if (people.length === 0) break;
+
+            totalFromApollo += people.length;
+
+            const newPeople = people.filter(
+              p => !existingNames.has((p.name || '').trim().toLowerCase())
+            );
+            collected.push(...newPeople);
+
+            // Apollo had fewer than requested — no more results available
+            if (people.length < perPage) break;
+          } catch {
+            break;
+          }
+
+          page++;
         }
-      } else if (limitedPeople.length > 0) {
-        setSearchStatus({ type: 'success', message: `All ${limitedPeople.length} found people are already in Pipedrive` });
+
+        return {
+          newPeople: collected.slice(0, peoplePerCompany),
+          totalFromApollo
+        };
+      };
+
+      const results = await Promise.all(apolloOrgs.map(fetchOrgPeople));
+      const allNewPeople = results.flatMap(r => r.newPeople);
+      const totalFromApollo = results.reduce((sum, r) => sum + r.totalFromApollo, 0);
+      const skipped = totalFromApollo - allNewPeople.length;
+
+      setCurrentOrgMapping(orgMapping);
+
+      if (allNewPeople.length > 0) {
+        setSelectedPeople(new Set(allNewPeople.filter(p => p.email).map((p, i) => p.id || `idx-${i}`)));
+        setFoundPeopleModal({ show: true, people: allNewPeople });
+        if (skipped > 0) {
+          setSearchStatus({ type: 'success', message: `Found ${allNewPeople.length} new people (${skipped} already in Pipedrive)` });
+        }
+      } else if (totalFromApollo > 0) {
+        setSearchStatus({ type: 'success', message: `All ${totalFromApollo} found people are already in Pipedrive` });
       } else {
         setSearchStatus({ type: 'success', message: 'No people found for the selected organizations' });
       }
@@ -494,6 +503,14 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
               {makeLeadStatus.message}
             </p>
           )}
+          <input
+            type="text"
+            className="filter-input"
+            placeholder="Search people..."
+            value={peopleSearchQuery}
+            onChange={e => setPeopleSearchQuery(e.target.value)}
+            style={{ marginBottom: '0.75rem', width: '100%', maxWidth: '320px' }}
+          />
           <div className="pipedrive-table-container">
             <table className="pipedrive-table">
               <thead>
@@ -515,7 +532,14 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                 </tr>
               </thead>
               <tbody>
-                {pipedrivePersons.map(person => {
+                {pipedrivePersons.filter(person => {
+                  if (!peopleSearchQuery) return true;
+                  const q = peopleSearchQuery.toLowerCase();
+                  const name = (person.name || '').toLowerCase();
+                  const email = (person.email && person.email[0] ? person.email[0].value : '').toLowerCase();
+                  const org = (person.org_id?.name || '').toLowerCase();
+                  return name.includes(q) || email.includes(q) || org.includes(q);
+                }).map(person => {
                   const headline = person.headline || '';
                   const linkedinUrl = person.linkedin_url || '';
                   const isSelected = selectedPipedrivePeople.has(person.id);
@@ -565,10 +589,15 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         </div>
       )}
 
-      <div className="search-form">
+      <div className="section-header" style={{ marginTop: '2.5rem' }}>
+        <h2>Search for New People</h2>
+        <p>Use Apollo to find new contacts within your Pipedrive organizations</p>
+      </div>
+
+      <div className="search-form search-new-people">
             <div className="form-section">
               <div className="section-header-with-actions">
-                <h3>Select Organizations ({searchParams.selectedOrganizations.length} selected)</h3>
+                <h3>Organizations</h3>
                 <div className="selection-actions">
                   <button className="btn-link" onClick={selectAllOrganizations}>
                     Select All
@@ -578,14 +607,24 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                   </button>
                 </div>
               </div>
-              
+              <p className="form-section-hint">{searchParams.selectedOrganizations.length} of {pipedriveOrganizations.length} selected</p>
+
               {isLoadingOrgs ? (
                 <div className="loading-container">
                   <div className="spinner-large"></div>
                   <p>Loading organizations from Pipedrive...</p>
                 </div>
               ) : pipedriveOrganizations.length > 0 ? (
-                <div className="pipedrive-table-container" style={{ marginTop: '1rem' }}>
+                <>
+                <input
+                  type="text"
+                  className="filter-input"
+                  placeholder="Search organizations..."
+                  value={orgSearchQuery}
+                  onChange={e => setOrgSearchQuery(e.target.value)}
+                  style={{ width: '100%', maxWidth: '320px' }}
+                />
+                <div className="pipedrive-table-container" style={{ marginTop: '0.75rem' }}>
                   <table className="pipedrive-table">
                     <thead>
                       <tr>
@@ -605,7 +644,11 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                       </tr>
                     </thead>
                     <tbody>
-                      {pipedriveOrganizations.map(org => {
+                      {pipedriveOrganizations.filter(org => {
+                        if (!orgSearchQuery) return true;
+                        const q = orgSearchQuery.toLowerCase();
+                        return (org.name || '').toLowerCase().includes(q) || (org.website || '').toLowerCase().includes(q);
+                      }).map(org => {
                         const isSelected = searchParams.selectedOrganizations.includes(org.id);
                         return (
                           <tr
@@ -643,6 +686,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                     </tbody>
                   </table>
                 </div>
+                </>
               ) : (
                 <p style={{ color: 'var(--text-secondary)', padding: '1rem' }}>No organizations found in Pipedrive.</p>
               )}
@@ -650,6 +694,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
 
             <div className="form-section">
               <h3>Job Titles</h3>
+              <p className="form-section-hint">Separate multiple titles with commas</p>
               <div className="form-group">
                 <input
                   type="text"
@@ -674,88 +719,82 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                     }
                   }}
                 />
-                <small>Separate multiple titles with commas (press Enter or click away to save)</small>
               </div>
             </div>
 
             <div className="form-section">
               <h3>Seniority Levels</h3>
-              <div className="checkbox-group">
+              <p className="form-section-hint">Select the seniority levels you want to target</p>
+              <div className="pill-group">
                 {seniorities.map(seniority => (
-                  <label key={seniority} className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={searchParams.personSeniorities.includes(seniority)}
-                      onChange={() => handleMultiSelectChange('personSeniorities', seniority)}
-                    />
+                  <button
+                    key={seniority}
+                    type="button"
+                    className={`pill-toggle${searchParams.personSeniorities.includes(seniority) ? ' active' : ''}`}
+                    onClick={() => handleMultiSelectChange('personSeniorities', seniority)}
+                  >
                     {seniority}
-                  </label>
+                  </button>
                 ))}
               </div>
             </div>
 
             <div className="form-section">
               <h3>Departments</h3>
-              <div className="checkbox-group">
+              <p className="form-section-hint">Pick the departments to search within</p>
+              <div className="pill-group">
                 {departments.map(dept => (
-                  <label key={dept} className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={searchParams.personDepartments.includes(dept)}
-                      onChange={() => handleMultiSelectChange('personDepartments', dept)}
-                    />
+                  <button
+                    key={dept}
+                    type="button"
+                    className={`pill-toggle${searchParams.personDepartments.includes(dept) ? ' active' : ''}`}
+                    onClick={() => handleMultiSelectChange('personDepartments', dept)}
+                  >
                     {dept}
-                  </label>
+                  </button>
                 ))}
               </div>
             </div>
 
             <div className="form-section">
-              <h3>Email Verification</h3>
-              <div className="checkbox-group">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={searchParams.verifiedEmailOnly}
-                    onChange={(e) => handleInputChange('verifiedEmailOnly', e.target.checked)}
-                  />
-                  <span>Only show people with verified emails</span>
-                </label>
-              </div>
-              <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
-                Enabling this filter may significantly reduce results but ensures higher email deliverability
-              </small>
-            </div>
-
-            <div className="form-section">
-              <h3>Results Limit</h3>
-              <div className="form-group">
-                <label>People per Company:</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={searchParams.peoplePerCompany}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    // Allow empty string for clearing, otherwise parse as number
-                    handleInputChange('peoplePerCompany', val === '' ? '' : Math.max(1, Math.min(50, parseInt(val) || 1)));
-                  }}
-                  onBlur={(e) => {
-                    // On blur, if empty, set to default 5
-                    if (e.target.value === '') {
-                      handleInputChange('peoplePerCompany', 5);
-                    }
-                  }}
-                  style={{ width: '100px' }}
-                />
-                <small style={{ color: '#666', display: 'block', marginTop: '0.5rem' }}>
-                  Limit the number of people to find per company (1-50)
-                </small>
+              <h3>Results</h3>
+              <div className="settings-row">
+                <div className="setting-item">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={searchParams.verifiedEmailOnly}
+                      onChange={(e) => handleInputChange('verifiedEmailOnly', e.target.checked)}
+                    />
+                    <span>Verified emails only</span>
+                  </label>
+                  <div className="setting-hint">May reduce results but ensures higher deliverability</div>
+                </div>
+                <div className="setting-item">
+                  <div className="limit-input-row">
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={searchParams.peoplePerCompany}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        handleInputChange('peoplePerCompany', val === '' ? '' : Math.max(1, Math.min(50, parseInt(val) || 1)));
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value === '') {
+                          handleInputChange('peoplePerCompany', 5);
+                        }
+                      }}
+                    />
+                    <span>people per company</span>
+                  </div>
+                  <div className="setting-hint">Limit 1–50 contacts per organization</div>
+                </div>
               </div>
             </div>
 
-            <div className="form-actions">
+            <div className="search-cta">
               {workflowErrors.map(err => (
                 <div key={err.id} className="workflow-error-banner">
                   <div className="workflow-error-content">
@@ -808,6 +847,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                       />
                     </th>
                     <th>Name</th>
+                    <th>Company</th>
                     <th>Title / Headline</th>
                     <th>Email</th>
                     <th>LinkedIn</th>
@@ -821,6 +861,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                     const truncated = headline.length > 60 ? headline.substring(0, 60) + '…' : headline;
                     const linkedin = person.linkedin_url || '';
                     const hasEmail = !!person.email;
+                    const companyName = person.organization_name || person.organization?.name || '-';
                     return (
                       <tr
                         key={key}
@@ -837,6 +878,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
                           />
                         </td>
                         <td><strong>{person.name || '-'}</strong></td>
+                        <td style={{ fontSize: '0.9em' }}>{companyName}</td>
                         <td style={{ fontSize: '0.9em', color: '#555' }}>
                           {headline.length > 60 ? (
                             <span

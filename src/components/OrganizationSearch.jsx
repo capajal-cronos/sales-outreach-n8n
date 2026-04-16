@@ -38,6 +38,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const [searchResults, setSearchResults] = useState([]);
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
   const [industryTagsInput, setIndustryTagsInput] = useState('');
+  const [orgSearchQuery, setOrgSearchQuery] = useState('');
   const [error, setError] = useState(null);
   const [locationInput, setLocationInput] = useState('');
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
@@ -693,6 +694,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
 
       <div className="section-header">
         <h2>Find Organizations</h2>
+        <p>Search Apollo for new organizations or manage existing ones from Pipedrive</p>
       </div>
 
       {/* Apollo Modal - checkbox selection like PeopleFinder */}
@@ -817,6 +819,14 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
       {pipedriveOrganizations.length > 0 ? (
         <div className="pipedrive-orgs">
           <h3>Organizations in Pipedrive ({pipedriveOrganizations.length})</h3>
+          <input
+            type="text"
+            className="filter-input"
+            placeholder="Search organizations..."
+            value={orgSearchQuery}
+            onChange={e => setOrgSearchQuery(e.target.value)}
+            style={{ marginBottom: '0.75rem', width: '100%', maxWidth: '320px' }}
+          />
           <div className="pipedrive-table-container">
             <table className="pipedrive-table">
               <thead>
@@ -828,7 +838,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                 </tr>
               </thead>
               <tbody>
-                {pipedriveOrganizations.map(org => (
+                {pipedriveOrganizations.filter(org => {
+                  if (!orgSearchQuery) return true;
+                  const q = orgSearchQuery.toLowerCase();
+                  return (org.name || '').toLowerCase().includes(q) || (org.website || '').toLowerCase().includes(q);
+                }).map(org => (
                   <tr key={org.id}>
                     <td><strong>{org.name}</strong></td>
                     <td>
@@ -943,59 +957,173 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           </>
         ) : searchMode === 'manual' ? (
           <>
-            {/* Manual Search - Name/Domain with optional Location - Compact Layout */}
-            <div className="form-section compact">
-              <h3>Organization Details</h3>
-              <div className="form-grid-compact">
-                <div className="form-group">
-                  <label>Organization Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., Acme Corporation"
-                    value={searchParams.organizationName}
-                    onChange={(e) => handleInputChange('organizationName', e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Domain</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., acme.com"
-                    value={searchParams.organizationDomain}
-                    onChange={(e) => handleInputChange('organizationDomain', e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Results Per Page</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="50"
-                    placeholder="10"
-                    value={searchParams.perPage || ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === '') {
-                        handleInputChange('perPage', '');
-                      } else {
-                        const num = parseInt(value);
-                        if (!isNaN(num) && num >= 1 && num <= 50) {
-                          handleInputChange('perPage', num);
-                        }
-                      }
-                    }}
-                    onBlur={(e) => {
-                      if (e.target.value === '' || parseInt(e.target.value) < 1) {
-                        handleInputChange('perPage', 10);
-                      }
-                    }}
-                  />
+            {/* Manual Search - Redesigned */}
+            <div className="form-section compact search-filters-redesign">
+              <div className="form-section">
+                <h3>Organization Details</h3>
+                <p className="form-section-hint">Enter a name or domain to search for</p>
+                <div className="form-grid-compact">
+                  <div className="form-group">
+                    <label>Organization Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Acme Corporation"
+                      value={searchParams.organizationName}
+                      onChange={(e) => handleInputChange('organizationName', e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Domain</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., acme.com"
+                      value={searchParams.organizationDomain}
+                      onChange={(e) => handleInputChange('organizationDomain', e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="form-group location-section">
-                <label>Location (Optional)</label>
+
+              <div className="form-section">
+                <div className="settings-row" style={{ gap: '2rem', alignItems: 'flex-start' }}>
+                  <div className="setting-item" style={{ flex: 2 }}>
+                    <h3 style={{ margin: '0 0 0.25rem' }}>Location</h3>
+                    <p className="form-section-hint" style={{ marginBottom: '0.5rem' }}>Type or select countries</p>
+                    {searchParams.organizationLocations.length > 0 && (
+                      <div className="pill-group" style={{ marginBottom: '0.5rem' }}>
+                        {searchParams.organizationLocations.map((loc, idx) => (
+                          <span key={idx} className="location-tag">
+                            {loc}
+                            <button
+                              className="tag-remove"
+                              onClick={() => {
+                                const newLocs = searchParams.organizationLocations.filter((_, i) => i !== idx);
+                                handleInputChange('organizationLocations', newLocs);
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div ref={locationInputRef} style={{ position: 'relative', width: '100%', maxWidth: '320px' }}>
+                      <input
+                        type="text"
+                        className="filter-input"
+                        placeholder="Type or select location..."
+                        value={locationInput}
+                        onChange={(e) => {
+                          setLocationInput(e.target.value);
+                          setShowLocationDropdown(true);
+                        }}
+                        onFocus={() => setShowLocationDropdown(true)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && locationInput.trim()) {
+                            e.preventDefault();
+                            const newLocs = [...searchParams.organizationLocations, locationInput.trim()];
+                            handleInputChange('organizationLocations', newLocs);
+                            setLocationInput('');
+                            setShowLocationDropdown(false);
+                          } else if (e.key === 'Escape') {
+                            setShowLocationDropdown(false);
+                          }
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                      {showLocationDropdown && filteredLocations.length > 0 && (
+                        <div className="location-dropdown">
+                          {filteredLocations.slice(0, 10).map((loc, idx) => (
+                            <div
+                              key={idx}
+                              className="location-dropdown-item"
+                              onClick={() => handleAddLocation(loc)}
+                            >
+                              {loc}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="setting-item">
+                    <h3 style={{ margin: '0 0 0.25rem' }}>Amount</h3>
+                    <p className="form-section-hint" style={{ marginBottom: '0.5rem' }}>Results per page</p>
+                    <div className="limit-input-row">
+                      <input
+                        type="number"
+                        min="1"
+                        max="50"
+                        placeholder="10"
+                        value={searchParams.perPage || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '') {
+                            handleInputChange('perPage', '');
+                          } else {
+                            const num = parseInt(value);
+                            if (!isNaN(num) && num >= 1 && num <= 50) {
+                              handleInputChange('perPage', num);
+                            }
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value === '' || parseInt(e.target.value) < 1) {
+                            handleInputChange('perPage', 10);
+                          }
+                        }}
+                      />
+                      <span>per page</span>
+                    </div>
+                    <div className="setting-hint">1–50 organizations</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Filter-based Search - Redesigned */}
+            <div className="form-section compact search-filters-redesign">
+              <div className="form-section">
+                <h3>Company Size</h3>
+                <p className="form-section-hint">Select one or more employee ranges</p>
+                <div className="pill-group">
+                  {employeeRanges.map(range => (
+                    <button
+                      key={range.value}
+                      type="button"
+                      className={`pill-toggle${searchParams.organizationNumEmployeesRanges.includes(range.value) ? ' active' : ''}`}
+                      onClick={() => handleMultiSelectChange('organizationNumEmployeesRanges', range.value)}
+                    >
+                      {range.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h3>Revenue Range</h3>
+                <p className="form-section-hint">Pick a revenue bracket</p>
+                <div className="pill-group">
+                  {revenueRanges.map(range => (
+                    <button
+                      key={range.value}
+                      type="button"
+                      className={`pill-toggle${searchParams.revenueRange[0] === range.value ? ' active' : ''}`}
+                      onClick={() => handleInputChange('revenueRange', searchParams.revenueRange[0] === range.value ? [] : [range.value])}
+                    >
+                      {range.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h3>Location</h3>
+                <p className="form-section-hint">Type or select countries to target</p>
                 {searchParams.organizationLocations.length > 0 && (
-                  <div className="location-tags">
+                  <div className="pill-group" style={{ marginBottom: '0.5rem' }}>
                     {searchParams.organizationLocations.map((loc, idx) => (
                       <span key={idx} className="location-tag">
                         {loc}
@@ -1012,10 +1140,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                     ))}
                   </div>
                 )}
-                <div ref={locationInputRef} style={{ position: 'relative', width: '100%' }}>
+                <div ref={locationInputRef} style={{ position: 'relative', width: '100%', maxWidth: '320px' }}>
                   <input
                     type="text"
-                    placeholder="Type or select location (e.g., Belgium)"
+                    className="filter-input"
+                    placeholder="Type or select location..."
                     value={locationInput}
                     onChange={(e) => {
                       setLocationInput(e.target.value);
@@ -1033,6 +1162,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                         setShowLocationDropdown(false);
                       }
                     }}
+                    style={{ width: '100%' }}
                   />
                   {showLocationDropdown && filteredLocations.length > 0 && (
                     <div className="location-dropdown">
@@ -1049,163 +1179,67 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                   )}
                 </div>
               </div>
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Filter-based Search - Compact Layout */}
-            <div className="form-section compact">
-              <h3>Search by Company Characteristics</h3>
-              
-              <div className="filters-grid">
-                {/* Company Size */}
-                <div className="filter-group">
-                  <label className="filter-label">Company Size</label>
-                  <div className="checkbox-grid">
-                    {employeeRanges.map(range => (
-                      <label key={range.value} className="checkbox-label compact">
-                        <input
-                          type="checkbox"
-                          checked={searchParams.organizationNumEmployeesRanges.includes(range.value)}
-                          onChange={() => handleMultiSelectChange('organizationNumEmployeesRanges', range.value)}
-                        />
-                        <span>{range.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Revenue Range */}
-                <div className="filter-group">
-                  <label className="filter-label">Revenue Range</label>
-                  <div className="checkbox-grid">
-                    {revenueRanges.map(range => (
-                      <label key={range.value} className="checkbox-label compact">
-                        <input
-                          type="radio"
-                          name="revenueRange"
-                          checked={searchParams.revenueRange[0] === range.value}
-                          onChange={() => handleInputChange('revenueRange', [range.value])}
-                        />
-                        <span>{range.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Results Per Page */}
-              <div className="form-group" style={{ marginTop: '1rem', maxWidth: '200px' }}>
-                <label className="filter-label">Results Per Page</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  placeholder="10"
-                  className="input-compact"
-                  value={searchParams.perPage || ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (value === '') {
-                      handleInputChange('perPage', '');
-                    } else {
-                      const num = parseInt(value);
-                      if (!isNaN(num) && num >= 1 && num <= 50) {
-                        handleInputChange('perPage', num);
-                      }
-                    }
-                  }}
-                  onBlur={(e) => {
-                    if (e.target.value === '' || parseInt(e.target.value) < 1) {
-                      handleInputChange('perPage', 10);
-                    }
-                  }}
-                />
-              </div>
-
-              {/* Location */}
-              <div className="form-group" style={{ marginTop: '1rem' }}>
-                <label className="filter-label">Location</label>
-                <div className="location-tags">
-                  {searchParams.organizationLocations.map((loc, idx) => (
-                    <span key={idx} className="location-tag">
-                      {loc}
-                      <button
-                        className="tag-remove"
-                        onClick={() => {
-                          const newLocs = searchParams.organizationLocations.filter((_, i) => i !== idx);
-                          handleInputChange('organizationLocations', newLocs);
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div ref={locationInputRef} style={{ position: 'relative', width: '100%' }}>
+              <div className="form-section">
+                <h3>Industry Tags</h3>
+                <p className="form-section-hint">Separate multiple tags with commas</p>
+                <div className="form-group">
                   <input
                     type="text"
-                    placeholder="Type or select location (e.g., United States)"
-                    value={locationInput}
+                    placeholder="e.g., Technology, SaaS, E-commerce"
+                    value={industryTagsInput}
                     onChange={(e) => {
-                      setLocationInput(e.target.value);
-                      setShowLocationDropdown(true);
-                    }}
-                    onFocus={() => setShowLocationDropdown(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && locationInput.trim()) {
-                        e.preventDefault();
-                        const newLocs = [...searchParams.organizationLocations, locationInput.trim()];
-                        handleInputChange('organizationLocations', newLocs);
-                        setLocationInput('');
-                        setShowLocationDropdown(false);
-                      } else if (e.key === 'Escape') {
-                        setShowLocationDropdown(false);
+                      const value = e.target.value;
+                      setIndustryTagsInput(value);
+                      if (value.includes(',')) {
+                        const tags = value.split(',').map(s => s.trim()).filter(Boolean);
+                        handleInputChange('organizationIndustryTagIds', tags);
+                      } else {
+                        handleInputChange('organizationIndustryTagIds', value.trim() ? [value.trim()] : []);
                       }
                     }}
-                  />
-                  {showLocationDropdown && filteredLocations.length > 0 && (
-                    <div className="location-dropdown">
-                      {filteredLocations.slice(0, 10).map((loc, idx) => (
-                        <div
-                          key={idx}
-                          className="location-dropdown-item"
-                          onClick={() => handleAddLocation(loc)}
-                        >
-                          {loc}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Industry Tags */}
-              <div className="form-group" style={{ marginTop: '1rem' }}>
-                <label className="filter-label">Industry Tags</label>
-                <small style={{ display: 'block', color: '#666', marginBottom: '0.5rem' }}>
-                  Separate multiple tags with commas
-                </small>
-                <input
-                  type="text"
-                  placeholder="e.g., Technology, SaaS, E-commerce"
-                  value={industryTagsInput}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setIndustryTagsInput(value);
-                    if (value.includes(',')) {
-                      const tags = value.split(',').map(s => s.trim()).filter(Boolean);
+                    onBlur={() => {
+                      const tags = industryTagsInput.split(',').map(s => s.trim()).filter(Boolean);
                       handleInputChange('organizationIndustryTagIds', tags);
-                    } else {
-                      handleInputChange('organizationIndustryTagIds', value.trim() ? [value.trim()] : []);
-                    }
-                  }}
-                  onBlur={() => {
-                    const tags = industryTagsInput.split(',').map(s => s.trim()).filter(Boolean);
-                    handleInputChange('organizationIndustryTagIds', tags);
-                    setIndustryTagsInput(tags.join(', '));
-                  }}
-                />
+                      setIndustryTagsInput(tags.join(', '));
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h3>Amount</h3>
+                <div className="settings-row">
+                  <div className="setting-item">
+                    <div className="limit-input-row">
+                      <input
+                        type="number"
+                        min="1"
+                        max="50"
+                        placeholder="10"
+                        value={searchParams.perPage || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '') {
+                            handleInputChange('perPage', '');
+                          } else {
+                            const num = parseInt(value);
+                            if (!isNaN(num) && num >= 1 && num <= 50) {
+                              handleInputChange('perPage', num);
+                            }
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value === '' || parseInt(e.target.value) < 1) {
+                            handleInputChange('perPage', 10);
+                          }
+                        }}
+                      />
+                      <span>results per page</span>
+                    </div>
+                    <div className="setting-hint">1–50 organizations per page</div>
+                  </div>
+                </div>
               </div>
             </div>
           </>

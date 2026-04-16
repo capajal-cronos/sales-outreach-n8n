@@ -230,6 +230,7 @@ export async function addResponse(responseData) {
     person_name: responseData.person_name || '',
     lead_id: responseData.lead_id || null,
     lead_title: responseData.lead_title || '',
+    stage: responseData.stage || '',
     original: responseData.original || '',
     received_at: new Date().toISOString()
   };

@@ -1,11 +1,11 @@
 import './WorkflowProgress.css';
 
-function WorkflowProgress({ steps, currentStep, onStepClick, workflowData }) {
+function WorkflowProgress({ steps, currentStep, onStepClick, workflowData, responseCount = 0 }) {
   const counts = {
     1: workflowData.organizations?.length || 0,
     2: workflowData.people?.length || 0,
     3: workflowData.leads?.length || 0,
-    4: workflowData.campaigns?.length || 0
+    4: responseCount
   };
 
   return (

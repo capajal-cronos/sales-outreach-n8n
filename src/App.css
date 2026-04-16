@@ -74,6 +74,8 @@
 /* ── Section Headers ── */
 .section-header {
   margin-bottom: 2rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .section-header h2 {

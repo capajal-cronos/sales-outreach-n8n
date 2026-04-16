@@ -2,6 +2,12 @@
   animation: fadeIn 0.3s var(--ease-out);
 }
 
+.response-meta {
+  margin: 0 0 1rem;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
 .empty-responses {
   text-align: center;
   padding: 3rem 2rem;
@@ -10,6 +16,40 @@
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
   font-size: 0.9375rem;
+}
+
+/* ── Filters ── */
+.response-filters {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.filter-input,
+.filter-select {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--duration-fast) ease;
+}
+
+.filter-input:focus,
+.filter-select:focus {
+  border-color: var(--accent);
+}
+
+.filter-input {
+  flex: 1;
+  max-width: 240px;
+}
+
+.filter-select {
+  min-width: 140px;
+  text-transform: capitalize;
 }
 
 /* ── Replies Table ── */
@@ -70,6 +110,13 @@
   color: var(--text-tertiary);
   white-space: nowrap;
   font-size: 0.8125rem !important;
+}
+
+.reply-stage {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-size: 0.8125rem !important;
+  text-transform: capitalize;
 }
 
 .reply-preview {
@@ -167,7 +214,6 @@
 
 .reply-modal-reply {
   padding: 1.25rem 1.5rem;
-  border-left: 3px solid var(--accent-color);
 }
 
 .reply-modal-label {

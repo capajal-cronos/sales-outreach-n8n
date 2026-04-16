@@ -6,7 +6,8 @@ function ResponseMonitor({ onPrevious }) {
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [selected, setSelected] = useState(null);
-
+  const [filterSender, setFilterSender] = useState('');
+  const [filterStage, setFilterStage] = useState('');
   useEffect(() => {
     fetchResponses();
     const interval = setInterval(fetchResponses, 10000);
@@ -40,15 +41,39 @@ function ResponseMonitor({ onPrevious }) {
     <div className="response-monitor">
       <div className="section-header">
         <h2>Response Monitor</h2>
-        <p>
-          {responses.length} repl{responses.length === 1 ? 'y' : 'ies'} · auto-refreshes every 10s
-          {lastUpdated && (
-            <span style={{ color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>
-              · last updated {lastUpdated.toLocaleTimeString()}
-            </span>
-          )}
-        </p>
+        <p>Track incoming replies from your email campaigns</p>
       </div>
+      <p className="response-meta">
+        {responses.length} repl{responses.length === 1 ? 'y' : 'ies'} · auto-refreshes every 10s
+        {lastUpdated && (
+          <span> · last updated {lastUpdated.toLocaleTimeString()}</span>
+        )}
+      </p>
+
+      {responses.length > 0 && (
+        <div className="response-filters">
+          <input
+            type="text"
+            className="filter-input"
+            placeholder="Filter by sender..."
+            value={filterSender}
+            onChange={e => setFilterSender(e.target.value)}
+          />
+          <select
+            className="filter-select"
+            value={filterStage}
+            onChange={e => setFilterStage(e.target.value)}
+          >
+            <option value="">All stages</option>
+            {[...new Set(responses.map(r => {
+              const s = r.stage && r.stage !== 'unknown' ? r.stage : '';
+              return s;
+            }).filter(Boolean))].sort().map(stage => (
+              <option key={stage} value={stage}>{stage.replace(/_/g, ' ')}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="responses-section">
         {isLoading ? (
@@ -63,18 +88,26 @@ function ResponseMonitor({ onPrevious }) {
               <tr>
                 <th>Sender</th>
                 <th>Lead</th>
+                <th>Stage</th>
                 <th>Reply</th>
                 <th>Date</th>
               </tr>
             </thead>
             <tbody>
-              {responses.map(response => {
+              {responses.filter(response => {
+                const name = (response.person_name || response.from || '').toLowerCase();
+                const stage = response.stage && response.stage !== 'unknown' ? response.stage : '';
+                if (filterSender && !name.includes(filterSender.toLowerCase())) return false;
+                if (filterStage && stage !== filterStage) return false;
+                return true;
+              }).map(response => {
                 const snippet = response.snippet || response.body || '';
                 const senderName = response.person_name || response.from || '(unknown)';
                 return (
                   <tr key={response.id} className="reply-row" onClick={() => setSelected(response)}>
                     <td className="reply-sender">{senderName}</td>
                     <td className="reply-lead">{response.lead_title || '—'}</td>
+                    <td className="reply-stage">{response.stage && response.stage !== 'unknown' ? response.stage.replace(/_/g, ' ') : '—'}</td>
                     <td className="reply-preview">{snippet.substring(0, 100) || '(no text)'}</td>
                     <td className="reply-date">{new Date(response.date || response.received_at).toLocaleString()}</td>
                   </tr>
@@ -94,6 +127,7 @@ function ResponseMonitor({ onPrevious }) {
                 <div className="reply-modal-meta">
                   {selected.person_name || selected.from}
                   {selected.lead_title && <span> · {selected.lead_title}</span>}
+                  {selected.stage && selected.stage !== 'unknown' && <span> · {selected.stage.replace(/_/g, ' ')}</span>}
                   <span> · {new Date(selected.date || selected.received_at).toLocaleString()}</span>
                 </div>
               </div>

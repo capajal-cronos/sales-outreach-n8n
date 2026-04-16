@@ -94,8 +94,9 @@ function App() {
   };
 
   const [workflowErrors, setWorkflowErrors] = useState([]);
+  const [responseCount, setResponseCount] = useState(0);
 
-  // Poll for workflow errors every 10 seconds
+  // Poll for workflow errors every 3 seconds and response count every 10 seconds
   useEffect(() => {
     const fetchErrors = async () => {
       try {
@@ -105,9 +106,19 @@ function App() {
         setWorkflowErrors(data.errors || []);
       } catch (_) {}
     };
+    const fetchResponseCount = async () => {
+      try {
+        const res = await fetch('http://localhost:3001/api/responses');
+        if (!res.ok) return;
+        const data = await res.json();
+        setResponseCount(data.count || 0);
+      } catch (_) {}
+    };
     fetchErrors();
-    const interval = setInterval(fetchErrors, 3000);
-    return () => clearInterval(interval);
+    fetchResponseCount();
+    const errorInterval = setInterval(fetchErrors, 3000);
+    const responseInterval = setInterval(fetchResponseCount, 10000);
+    return () => { clearInterval(errorInterval); clearInterval(responseInterval); };
   }, []);
 
   // When an error arrives for a specific lead, unblock it immediately
@@ -174,6 +185,7 @@ function App() {
           currentStep={currentStep}
           onStepClick={goToStep}
           workflowData={workflowData}
+          responseCount={responseCount}
         />
       </aside>
 

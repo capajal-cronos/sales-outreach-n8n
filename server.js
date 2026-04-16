@@ -389,6 +389,26 @@ app.delete('/api/email-queue/status/:status', async (req, res) => {
 app.post('/api/responses', async (req, res) => {
   try {
     const payload = Array.isArray(req.body) ? req.body[0] : req.body;
+
+    // If stage missing or 'unknown', try looking up the lead's label from Pipedrive
+    const pipedriveKey = process.env.PIPEDRIVE_API_KEY || process.env.VITE_PIPEDRIVE_API_KEY;
+    if ((!payload.stage || payload.stage === 'unknown') && payload.lead_id && pipedriveKey) {
+      try {
+        const labelsRes = await fetch(`https://api.pipedrive.com/v1/leadLabels?api_token=${pipedriveKey}`);
+        const labelsData = await labelsRes.json();
+        const labelMap = {};
+        if (labelsData.success && labelsData.data) {
+          labelsData.data.forEach(l => { labelMap[l.id] = l.name.toLowerCase(); });
+        }
+        const leadRes = await fetch(`https://api.pipedrive.com/v1/leads/${payload.lead_id}?api_token=${pipedriveKey}`);
+        const leadData = await leadRes.json();
+        if (leadData.success && leadData.data) {
+          const labelId = leadData.data.label_ids?.[0];
+          if (labelId && labelMap[labelId]) payload.stage = labelMap[labelId];
+        }
+      } catch (_) { /* stage will just be empty */ }
+    }
+
     const response = await addResponse(payload);
     res.json({ success: true, response });
   } catch (error) {
