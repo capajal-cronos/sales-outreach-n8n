@@ -75,12 +75,8 @@
   background-color: var(--bg-muted);
 }
 
-.leads-table tbody tr.selected {
-  background-color: var(--accent-light);
-}
-
 .leads-table tbody tr.selected:hover {
-  background-color: #E8DDD6;
+  background-color: var(--bg-muted);
 }
 
 .leads-table input[type="checkbox"] {

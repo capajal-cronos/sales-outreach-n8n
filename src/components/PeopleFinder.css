@@ -288,7 +288,7 @@
 .setting-item label input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--accent-color);
+  accent-color: var(--primary-color);
   cursor: pointer;
 }
 

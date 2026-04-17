@@ -1,5 +1,155 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import './PeopleFinder.css';
+
+const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
+
+// Module-level stores survive component unmount. Switching tabs mid-fetch
+// no longer restarts the fetch or drops already-loaded persons/orgs.
+const personsStore = { data: null, isLoading: false, inflight: null, listeners: new Set() };
+const orgsStore = { data: null, isLoading: false, inflight: null, listeners: new Set() };
+
+const notifyStore = (store) => store.listeners.forEach(fn => fn());
+
+async function fetchPersonDetail(person) {
+  let retries = 2;
+  while (retries >= 0) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const detailResponse = await fetch(
+        `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`,
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+
+      if (detailResponse.ok) {
+        const detailData = await detailResponse.json();
+        if (detailData && detailData.success && detailData.data) {
+          const personData = detailData.data;
+          let headline = '';
+          let linkedinUrl = '';
+          if (personData.custom_fields) {
+            linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
+            headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
+          }
+          return { ...person, headline, linkedin_url: linkedinUrl };
+        }
+      } else if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    retries--;
+  }
+  console.error(`Failed to fetch person ${person.id} after retries`);
+  return { ...person, headline: null, linkedin_url: null, _detailFetchFailed: true };
+}
+
+async function runPersonsFetch() {
+  personsStore.isLoading = true;
+  personsStore.data = [];
+  notifyStore(personsStore);
+
+  try {
+    const response = await fetch(
+      `https://api.pipedrive.com/v1/persons?api_token=${PIPEDRIVE_API_KEY}&limit=100`
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.data) {
+        const BATCH_SIZE = 5;
+        const BATCH_DELAY_MS = 600;
+
+        for (let i = 0; i < data.data.length; i += BATCH_SIZE) {
+          const batch = data.data.slice(i, i + BATCH_SIZE);
+          const results = await Promise.all(batch.map(p => fetchPersonDetail(p)));
+          personsStore.data = [...(personsStore.data || []), ...results];
+          notifyStore(personsStore);
+          if (i + BATCH_SIZE < data.data.length) {
+            await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch Pipedrive persons:', err);
+  } finally {
+    personsStore.isLoading = false;
+    personsStore.inflight = null;
+    notifyStore(personsStore);
+  }
+}
+
+function ensurePersonsLoaded() {
+  if (personsStore.inflight) return personsStore.inflight;
+  if (personsStore.data !== null) return Promise.resolve();
+  personsStore.inflight = runPersonsFetch();
+  return personsStore.inflight;
+}
+
+function refetchPersons() {
+  if (personsStore.inflight) return personsStore.inflight;
+  personsStore.inflight = runPersonsFetch();
+  return personsStore.inflight;
+}
+
+async function runOrgsFetch() {
+  orgsStore.isLoading = true;
+  notifyStore(orgsStore);
+
+  try {
+    const response = await fetch(
+      `https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.data) {
+        const detailedOrgs = await Promise.all(
+          data.data.map(async (org) => {
+            try {
+              const detailResponse = await fetch(
+                `https://api.pipedrive.com/v1/organizations/${org.id}?api_token=${PIPEDRIVE_API_KEY}`
+              );
+              if (detailResponse.ok) {
+                const detailData = await detailResponse.json();
+                if (detailData.success && detailData.data) {
+                  const apolloId = detailData.data['596a7f23303e67be9328a9f09ce7f4979caf2c7f'];
+                  return { ...detailData.data, apollo_id: apolloId };
+                }
+                return detailData.success && detailData.data ? detailData.data : org;
+              }
+            } catch (err) {
+              console.error(`Failed to fetch details for org ${org.id}:`, err);
+            }
+            return org;
+          })
+        );
+
+        orgsStore.data = detailedOrgs;
+        notifyStore(orgsStore);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch Pipedrive organizations:', err);
+  } finally {
+    orgsStore.isLoading = false;
+    orgsStore.inflight = null;
+    notifyStore(orgsStore);
+  }
+}
+
+function ensureOrgsLoaded() {
+  if (orgsStore.inflight) return orgsStore.inflight;
+  if (orgsStore.data !== null) return Promise.resolve();
+  orgsStore.inflight = runOrgsFetch();
+  return orgsStore.inflight;
+}
 
 function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, workflowErrors = [], onDismissError }) {
   const [searchParams, setSearchParams] = useState({
@@ -15,10 +165,19 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingPeople, setIsLoadingPeople] = useState(true);
   const [searchStatus, setSearchStatus] = useState(null); // { type: 'error', message: string }
-  const [pipedrivePersons, setPipedrivePersons] = useState(workflowData.people || []);
-  const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
+  const [pipedrivePersons, setPipedrivePersons] = useState(
+    personsStore.data !== null ? personsStore.data : (workflowData.people || [])
+  );
+  const [pipedriveOrganizations, setPipedriveOrganizations] = useState(
+    orgsStore.data !== null ? orgsStore.data : (workflowData.organizations || [])
+  );
+  const [isLoadingPeople, setIsLoadingPeople] = useState(
+    personsStore.data === null || personsStore.isLoading
+  );
+  const [isLoadingOrgs, setIsLoadingOrgs] = useState(
+    orgsStore.data === null || orgsStore.isLoading
+  );
   const [headlineModal, setHeadlineModal] = useState({ show: false, headline: '', name: '' });
   const [foundPeopleModal, setFoundPeopleModal] = useState({ show: false, people: [] });
   const [currentOrgMapping, setCurrentOrgMapping] = useState({});
@@ -27,23 +186,28 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
   const [selectedPipedrivePeople, setSelectedPipedrivePeople] = useState(new Set());
   const [isMakingLeads, setIsMakingLeads] = useState(false);
   const [makeLeadStatus, setMakeLeadStatus] = useState(null);
-  const [isLoadingOrgs, setIsLoadingOrgs] = useState(true);
   const [peopleSearchQuery, setPeopleSearchQuery] = useState('');
   const [orgSearchQuery, setOrgSearchQuery] = useState('');
 
-  // Ref to prevent double fetching in StrictMode
-  const hasFetchedRef = useRef(false);
-
-  // Get Pipedrive API key from environment
-  const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
-
-  // Fetch people and organizations from Pipedrive on mount
+  // Subscribe to module-level stores so data and in-flight fetches persist
+  // across tab switches. Remounting no longer restarts or drops fetches.
   useEffect(() => {
-    if (!hasFetchedRef.current) {
-      hasFetchedRef.current = true;
-      fetchPipedrivePersons(); // Always refresh — deletions in Pipedrive must be reflected
-      fetchPipedriveOrganizations(); // Always refresh — cached orgs may lack apollo_id
-    }
+    const syncPersons = () => {
+      setPipedrivePersons(personsStore.data || []);
+      setIsLoadingPeople(personsStore.isLoading || personsStore.data === null);
+    };
+    const syncOrgs = () => {
+      setPipedriveOrganizations(orgsStore.data || []);
+      setIsLoadingOrgs(orgsStore.isLoading || orgsStore.data === null);
+    };
+    personsStore.listeners.add(syncPersons);
+    orgsStore.listeners.add(syncOrgs);
+    ensurePersonsLoaded();
+    ensureOrgsLoaded();
+    return () => {
+      personsStore.listeners.delete(syncPersons);
+      orgsStore.listeners.delete(syncOrgs);
+    };
   }, []);
 
   // Update workflowData when pipedrivePersons changes
@@ -52,122 +216,6 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
       updateWorkflowData('people', pipedrivePersons);
     }
   }, [pipedrivePersons]);
-
-  const fetchPipedriveOrganizations = async () => {
-    setIsLoadingOrgs(true);
-    try {
-      const response = await fetch(
-        `https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.data) {
-          // Fetch detailed info for each organization to get Apollo ID and other fields
-          const detailedOrgs = await Promise.all(
-            data.data.map(async (org) => {
-              try {
-                const detailResponse = await fetch(
-                  `https://api.pipedrive.com/v1/organizations/${org.id}?api_token=${PIPEDRIVE_API_KEY}`
-                );
-                if (detailResponse.ok) {
-                  const detailData = await detailResponse.json();
-                  if (detailData.success && detailData.data) {
-                    // Extract Apollo ID from custom field
-                    const apolloId = detailData.data['596a7f23303e67be9328a9f09ce7f4979caf2c7f'];
-                    return {
-                      ...detailData.data,
-                      apollo_id: apolloId
-                    };
-                  }
-                  return detailData.success && detailData.data ? detailData.data : org;
-                }
-              } catch (err) {
-                console.error(`Failed to fetch details for org ${org.id}:`, err);
-              }
-              return org;
-            })
-          );
-
-          setPipedriveOrganizations(detailedOrgs);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch Pipedrive organizations:', err);
-    } finally {
-      setIsLoadingOrgs(false);
-    }
-  };
-
-  const fetchPersonDetail = async (person) => {
-    let retries = 2;
-    while (retries >= 0) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      try {
-        const detailResponse = await fetch(
-          `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`,
-          { signal: controller.signal }
-        );
-        clearTimeout(timeoutId);
-
-        if (detailResponse.ok) {
-          const detailData = await detailResponse.json();
-          if (detailData && detailData.success && detailData.data) {
-            const personData = detailData.data;
-            let headline = '';
-            let linkedinUrl = '';
-            if (personData.custom_fields) {
-              linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
-              headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
-            }
-            return { ...person, headline, linkedin_url: linkedinUrl };
-          }
-        } else if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      } catch (fetchErr) {
-        clearTimeout(timeoutId);
-        if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-      retries--;
-    }
-    console.error(`Failed to fetch person ${person.id} after retries`);
-    return { ...person, headline: null, linkedin_url: null, _detailFetchFailed: true };
-  };
-
-  const fetchPipedrivePersons = async () => {
-    setIsLoadingPeople(true);
-    setPipedrivePersons([]);
-    try {
-      const response = await fetch(
-        `https://api.pipedrive.com/v1/persons?api_token=${PIPEDRIVE_API_KEY}&limit=100`
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.data) {
-          const BATCH_SIZE = 5;
-          const BATCH_DELAY_MS = 600;
-
-          for (let i = 0; i < data.data.length; i += BATCH_SIZE) {
-            const batch = data.data.slice(i, i + BATCH_SIZE);
-            const results = await Promise.all(batch.map(person => fetchPersonDetail(person)));
-            setPipedrivePersons(prev => [...prev, ...results]);
-            if (i + BATCH_SIZE < data.data.length) {
-              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch Pipedrive persons:', err);
-    } finally {
-      setIsLoadingPeople(false);
-    }
-  };
 
   const seniorities = [
     'Entry',
@@ -389,7 +437,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, wo
         body: JSON.stringify({ people: withEmail, pipedrive_org_mapping: currentOrgMapping })
       });
       setFoundPeopleModal({ show: false, people: [] });
-      await fetchPipedrivePersons();
+      await refetchPersons();
     } finally {
       setIsSaving(false);
     }

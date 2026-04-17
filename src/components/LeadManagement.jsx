@@ -339,7 +339,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                   <div className="cooldown-control">
                     <button className="cooldown-btn" onClick={() => setCooldownDays(String(Math.max(0, (parseInt(cooldownDays) || 0) - 1)))} disabled={(parseInt(cooldownDays) || 0) <= 0}>-</button>
                     <span className="cooldown-value">{parseInt(cooldownDays) || 0}</span>
-                    <button className="cooldown-btn" onClick={() => setCooldownDays(String(Math.min(10, (parseInt(cooldownDays) || 0) + 1)))} disabled={(parseInt(cooldownDays) || 0) >= 10}>+</button>
+                    <button className="cooldown-btn" onClick={() => setCooldownDays(String(Math.min(14, (parseInt(cooldownDays) || 0) + 1)))} disabled={(parseInt(cooldownDays) || 0) >= 14}>+</button>
                     <span className="cooldown-unit">days</span>
                   </div>
                 </div>
@@ -354,6 +354,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                     value={emailPrompt}
                     onChange={e => setEmailPrompt(e.target.value)}
                     rows={14}
+                    spellCheck={false}
                   />
                   <div className="prompt-editor-footer">
                     <small className="prompt-placeholders">
@@ -408,9 +409,11 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                     <tr
                       key={lead.id}
                       className={`${selectedLeads.includes(lead.id) ? 'selected' : ''}${isAnswered(lead) ? ' excluded-answered' : ''}${isLastMail(lead) ? ' excluded-lastmail' : ''}${coolingDown ? ' cooling-down' : ''}`}
-                      style={isPending ? { opacity: 0.4, pointerEvents: 'none', backgroundColor: '#f0f0f0' } : {}}
+                      style={isPending ? { opacity: 0.4, pointerEvents: 'none', backgroundColor: '#f0f0f0' } : { cursor: disabled ? 'not-allowed' : 'pointer' }}
+                      onClick={() => !disabled && handleSelectLead(lead.id)}
+                      title={disabledTitle}
                     >
-                      <td>
+                      <td onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedLeads.includes(lead.id)}
