@@ -5,6 +5,11 @@ import './EmailCampaign.css';
 const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook/send-leads-mails';
 const EXCLUDED_LABELS = ['answered', 'last_mail', 'last mail'];
 
+const DAILY_CAP_MAX = 50;
+const DAILY_CAP_STEP = 5;
+const DAILY_CAP_STORAGE_KEY = 'leadCampaign.dailyCap';
+const SENT_TODAY_STORAGE_KEY = 'leadCampaign.sentToday';
+
 const DEFAULT_EMAIL_PROMPT = `Write a personalized cold email.
 
 Sender:
@@ -19,11 +24,11 @@ Website summary: {company_summary}
 
 Email stage: {email_stage}
 
-Write the email appropriate for this stage:
-- first_mail → intro
-- second_mail → follow-up
-- third_mail → bump
-- last_mail → final goodbye`;
+Email stage behavior:
+- first_mail → Intro email. Present yourself and spark curiosity. Warm, confident tone.
+- second_mail → Follow-up. Reference that you sent a previous email. Stay light, no pressure.
+- third_mail → Bump. Very short. Just a nudge. One or two sentences max before the question.
+- last_mail → Final goodbye. Let them know this is your last message. Leave the door open gracefully.`;
 
 function timeAgo(dateStr) {
   if (!dateStr) return '-';
@@ -32,6 +37,41 @@ function timeAgo(dateStr) {
   if (hours < 24) return hours <= 0 ? 'just now' : `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function loadDailyCap() {
+  try {
+    const raw = localStorage.getItem(DAILY_CAP_STORAGE_KEY);
+    const n = parseInt(raw, 10);
+    if (isNaN(n)) return 0;
+    return Math.max(0, Math.min(DAILY_CAP_MAX, n));
+  } catch {
+    return 0;
+  }
+}
+
+function loadSentToday() {
+  try {
+    const raw = localStorage.getItem(SENT_TODAY_STORAGE_KEY);
+    if (!raw) return 0;
+    const parsed = JSON.parse(raw);
+    if (parsed?.date === getTodayKey()) return parsed.count || 0;
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+function persistSentToday(count) {
+  try {
+    localStorage.setItem(SENT_TODAY_STORAGE_KEY, JSON.stringify({ date: getTodayKey(), count }));
+  } catch {
+    // ignore
+  }
 }
 
 function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, campaignPendingLeads = {}, onCampaignStarted, onCampaignDecided, workflowErrors = [], onDismissError }) {
@@ -47,6 +87,8 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   const [emailPrompt, setEmailPrompt] = useState(DEFAULT_EMAIL_PROMPT);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [cooldownDays, setCooldownDays] = useState('');
+  const [dailyCap, setDailyCap] = useState(loadDailyCap);
+  const [sentToday, setSentToday] = useState(loadSentToday);
   const hasFetchedRef = useRef(false);
 
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
@@ -63,6 +105,32 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
     const interval = setInterval(fetchPendingEmails, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DAILY_CAP_STORAGE_KEY, String(dailyCap));
+    } catch {
+      // ignore
+    }
+  }, [dailyCap]);
+
+  const incrementSentToday = () => {
+    setSentToday(prev => {
+      const raw = (() => {
+        try { return localStorage.getItem(SENT_TODAY_STORAGE_KEY); } catch { return null; }
+      })();
+      let base = prev;
+      try {
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (parsed?.date !== getTodayKey()) base = 0;
+      } catch {
+        // ignore
+      }
+      const next = base + 1;
+      persistSentToday(next);
+      return next;
+    });
+  };
 
   const fetchLabelMapping = async () => {
     try {
@@ -201,6 +269,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
       }
       setPendingEmails(prev => prev.filter(e => e.id !== emailId));
       onCampaignDecided?.([email.lead_id]);
+      incrementSentToday();
     } catch (err) {
       alert(`Network error while approving email: ${err.message}`);
     }
@@ -234,6 +303,7 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
       setEditingEmail(null);
       setPendingEmails(prev => prev.filter(e => e.id !== email.id));
       onCampaignDecided?.([email.lead_id]);
+      incrementSentToday();
     } catch (err) {
       alert(`Network error while sending email: ${err.message}`);
     }
@@ -259,6 +329,16 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
   const pendingCount = Object.keys(campaignPendingLeads).length;
   const selectableInView = filteredLeads.filter(l => !isExcluded(l) && !isCoolingDown(l) && !(l.id in campaignPendingLeads));
   const allSelected = selectableInView.length > 0 && selectableInView.every(l => selectedLeads.includes(l.id));
+
+  const capActive = dailyCap > 0;
+  const remainingToday = capActive ? Math.max(0, dailyCap - sentToday) : Infinity;
+  const capReached = capActive && sentToday >= dailyCap;
+  const eligibleForCampaignCount = eligibleLeads.filter(l => !(l.id in campaignPendingLeads)).length;
+  const selectedOverCap = capActive && selectedLeads.length > remainingToday;
+  const allOverCap = capActive && eligibleForCampaignCount > remainingToday;
+  const capTooltip = capActive
+    ? `Daily cap: ${sentToday}/${dailyCap} sent today (${remainingToday} remaining)`
+    : undefined;
 
   return (
     <div className="lead-management">
@@ -310,14 +390,16 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
               <button
                 className="btn btn-primary"
                 onClick={handleStartForSelected}
-                disabled={selectedLeads.length === 0 || isSending}
+                disabled={selectedLeads.length === 0 || isSending || selectedOverCap}
+                title={selectedOverCap ? `Over daily cap — ${remainingToday} remaining today (${sentToday}/${dailyCap} sent)` : capTooltip}
               >
                 {isSending ? 'Sending...' : `Campaign (${selectedLeads.length} selected)`}
               </button>
               <button
                 className="btn btn-secondary"
                 onClick={handleStartForAll}
-                disabled={isSending || eligibleLeads.filter(l => !(l.id in campaignPendingLeads)).length === 0}
+                disabled={isSending || eligibleForCampaignCount === 0 || allOverCap}
+                title={allOverCap ? `Over daily cap — ${remainingToday} remaining today (${sentToday}/${dailyCap} sent)` : capTooltip}
               >
                 Campaign for all ({eligibleLeads.length})
               </button>
@@ -341,6 +423,30 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                     <span className="cooldown-value">{parseInt(cooldownDays) || 0}</span>
                     <button className="cooldown-btn" onClick={() => setCooldownDays(String(Math.min(14, (parseInt(cooldownDays) || 0) + 1)))} disabled={(parseInt(cooldownDays) || 0) >= 14}>+</button>
                     <span className="cooldown-unit">days</span>
+                  </div>
+                </div>
+                <div className="campaign-settings-divider" />
+                <div className="campaign-setting-group">
+                  <div className="campaign-setting-header">
+                    <label className="campaign-setting-label">Daily send cap</label>
+                    <span className="campaign-setting-hint">
+                      Max emails you can send per day to avoid spam flags (0 = no limit).
+                      {capActive && ` Sent today: ${sentToday}/${dailyCap}.`}
+                    </span>
+                  </div>
+                  <div className="cooldown-control">
+                    <button
+                      className="cooldown-btn"
+                      onClick={() => setDailyCap(Math.max(0, dailyCap - DAILY_CAP_STEP))}
+                      disabled={dailyCap <= 0}
+                    >-</button>
+                    <span className="cooldown-value">{dailyCap}</span>
+                    <button
+                      className="cooldown-btn"
+                      onClick={() => setDailyCap(Math.min(DAILY_CAP_MAX, dailyCap + DAILY_CAP_STEP))}
+                      disabled={dailyCap >= DAILY_CAP_MAX}
+                    >+</button>
+                    <span className="cooldown-unit">emails</span>
                   </div>
                 </div>
                 <div className="campaign-settings-divider" />
@@ -503,13 +609,23 @@ function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, 
                       <div className="email-actions">
                         {isEditing ? (
                           <>
-                            <button className="btn btn-success" onClick={handleSendEdited}>Send Edited Version</button>
+                            <button
+                              className="btn btn-success"
+                              onClick={handleSendEdited}
+                              disabled={capReached}
+                              title={capReached ? `Daily cap reached (${sentToday}/${dailyCap}). Raise cap in Campaign Settings or wait until tomorrow.` : capTooltip}
+                            >Send Edited Version</button>
                             <button className="btn btn-danger" onClick={handleDiscardEmail}>Discard</button>
                             <button className="btn btn-secondary" onClick={() => setEditingEmail(null)}>← Back</button>
                           </>
                         ) : (
                           <>
-                            <button className="btn btn-success" onClick={() => handleApproveEmail(email.id)}>Approve & Send</button>
+                            <button
+                              className="btn btn-success"
+                              onClick={() => handleApproveEmail(email.id)}
+                              disabled={capReached}
+                              title={capReached ? `Daily cap reached (${sentToday}/${dailyCap}). Raise cap in Campaign Settings or wait until tomorrow.` : capTooltip}
+                            >Approve & Send</button>
                             <button className="btn btn-warning" onClick={() => handleDeclineEmail(email.id)}>Edit / Decline</button>
                           </>
                         )}
