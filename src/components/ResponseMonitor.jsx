@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import './ResponseMonitor.css';
 
-function ResponseMonitor({ onPrevious }) {
+function ResponseMonitor() {
   const [responses, setResponses] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);

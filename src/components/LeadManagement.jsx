@@ -74,7 +74,7 @@ function persistSentToday(count) {
   }
 }
 
-function LeadManagement({ workflowData, updateWorkflowData, onNext, onPrevious, campaignPendingLeads = {}, onCampaignStarted, onCampaignDecided, workflowErrors = [], onDismissError }) {
+function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads = {}, onCampaignStarted, onCampaignDecided, workflowErrors = [], onDismissError }) {
   const [leads, setLeads] = useState(workflowData.leads || []);
   const [filter, setFilter] = useState('all');
   const [isLoading, setIsLoading] = useState((workflowData.leads || []).length === 0);

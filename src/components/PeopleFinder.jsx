@@ -151,7 +151,7 @@ function ensureOrgsLoaded() {
   return orgsStore.inflight;
 }
 
-function PeopleFinder({ workflowData, updateWorkflowData, onNext, onPrevious, workflowErrors = [], onDismissError }) {
+function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], onDismissError }) {
   const [searchParams, setSearchParams] = useState({
     selectedOrganizations: [],
     personTitles: [],

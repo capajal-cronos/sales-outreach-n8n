@@ -160,12 +160,6 @@ function App() {
     }
   };
 
-  const goToPreviousStep = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-    }
-  };
-
   const goToStep = (stepId) => {
     setCurrentStep(stepId);
   };
@@ -194,7 +188,6 @@ function App() {
           workflowData={workflowData}
           updateWorkflowData={updateWorkflowData}
           onNext={goToNextStep}
-          onPrevious={goToPreviousStep}
           campaignPendingLeads={campaignPendingLeads}
           onCampaignStarted={addCampaignPendingLeads}
           onCampaignDecided={removeCampaignPendingLeads}
