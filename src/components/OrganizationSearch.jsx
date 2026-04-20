@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import readXlsxFile from 'read-excel-file/browser';
 import './OrganizationSearch.css';
 
 function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflowErrors = [], onDismissError }) {
@@ -43,6 +43,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const [pipedriveOrganizations, setPipedriveOrganizations] = useState(workflowData.organizations || []);
   const [industryTagsInput, setIndustryTagsInput] = useState('');
   const [orgSearchQuery, setOrgSearchQuery] = useState('');
+  const [orgSort, setOrgSort] = useState('asc');
+
+  const toggleOrgSort = () => setOrgSort(prev => prev === 'asc' ? 'desc' : 'asc');
   const [error, setError] = useState(null);
   const [locationInput, setLocationInput] = useState('');
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
@@ -237,79 +240,67 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   };
 
   // Parse a file and extract the domain column
-  const parseFileForDomains = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+  const parseFileForDomains = async (file) => {
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    let rows = [];
 
-      reader.onload = (e) => {
-        try {
-          let rows = [];
-          const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-
-          if (ext === '.csv') {
-            const text = e.target.result;
-            rows = text.split(/\r?\n/).filter(line => line.trim()).map(line => line.split(/[,;\t]/));
-          } else if (ext === '.xlsx') {
-            const workbook = XLSX.read(e.target.result, { type: 'array' });
-            const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-          }
-
-          if (rows.length === 0) { resolve([]); return; }
-
-          // Find which column has domains — score each column
-          const numCols = Math.max(...rows.map(r => r.length));
-          let bestCol = 0;
-          let bestScore = 0;
-
-          // Check header row for hints first
-          const headerRow = rows[0].map(c => String(c || '').toLowerCase().trim());
-          const domainHeaders = ['domain', 'website', 'url', 'web', 'site', 'homepage'];
-          const headerIdx = headerRow.findIndex(h => domainHeaders.some(dh => h.includes(dh)));
-          if (headerIdx >= 0) {
-            bestCol = headerIdx;
-            bestScore = Infinity; // header match wins
-          }
-
-          if (bestScore === 0) {
-            // No header match — count domain-like values per column
-            for (let col = 0; col < numCols; col++) {
-              let score = 0;
-              for (let row = 0; row < rows.length; row++) {
-                if (looksLikeDomain(String(rows[row][col] || ''))) score++;
-              }
-              if (score > bestScore) { bestScore = score; bestCol = col; }
-            }
-          }
-
-          // Extract domains from the winning column, skip header if it's a label
-          const startRow = looksLikeDomain(String(rows[0][bestCol] || '')) ? 0 : 1;
-          const domains = [];
-          const seen = new Set();
-          for (let i = startRow; i < rows.length; i++) {
-            const raw = String(rows[i][bestCol] || '').trim();
-            if (!raw) continue;
-            const domain = cleanDomain(raw);
-            if (domain && !seen.has(domain)) {
-              seen.add(domain);
-              domains.push(domain);
-            }
-          }
-
-          resolve(domains);
-        } catch (err) {
-          reject(err);
-        }
-      };
-
-      reader.onerror = () => reject(new Error('Failed to read file'));
-
-      if (file.name.endsWith('.xlsx')) {
-        reader.readAsArrayBuffer(file);
-      } else if (file.name.endsWith('.csv')) {
+    if (ext === '.csv') {
+      rows = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            resolve(e.target.result.split(/\r?\n/).filter(line => line.trim()).map(line => line.split(/[,;\t]/)));
+          } catch (err) { reject(err); }
+        };
+        reader.onerror = () => reject(new Error('Failed to read file'));
         reader.readAsText(file);
+      });
+    } else if (ext === '.xlsx') {
+      rows = await readXlsxFile(file);
+    }
+
+    if (rows.length === 0) return [];
+
+    // Find which column has domains — score each column
+    const numCols = Math.max(...rows.map(r => r.length));
+    let bestCol = 0;
+    let bestScore = 0;
+
+    // Check header row for hints first
+    const headerRow = rows[0].map(c => String(c || '').toLowerCase().trim());
+    const domainHeaders = ['domain', 'website', 'url', 'web', 'site', 'homepage'];
+    const headerIdx = headerRow.findIndex(h => domainHeaders.some(dh => h.includes(dh)));
+    if (headerIdx >= 0) {
+      bestCol = headerIdx;
+      bestScore = Infinity; // header match wins
+    }
+
+    if (bestScore === 0) {
+      // No header match — count domain-like values per column
+      for (let col = 0; col < numCols; col++) {
+        let score = 0;
+        for (let row = 0; row < rows.length; row++) {
+          if (looksLikeDomain(String(rows[row][col] || ''))) score++;
+        }
+        if (score > bestScore) { bestScore = score; bestCol = col; }
       }
-    });
+    }
+
+    // Extract domains from the winning column, skip header if it's a label
+    const startRow = looksLikeDomain(String(rows[0][bestCol] || '')) ? 0 : 1;
+    const domains = [];
+    const seen = new Set();
+    for (let i = startRow; i < rows.length; i++) {
+      const raw = String(rows[i][bestCol] || '').trim();
+      if (!raw) continue;
+      const domain = cleanDomain(raw);
+      if (domain && !seen.has(domain)) {
+        seen.add(domain);
+        domains.push(domain);
+      }
+    }
+
+    return domains;
   };
 
   const handleFileUpload = async (event) => {
@@ -932,7 +923,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
             <table className="pipedrive-table">
               <thead>
                 <tr>
-                  <th>Name</th>
+                  <th onClick={toggleOrgSort} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Name {orgSort === 'asc' ? '↑' : '↓'}
+                  </th>
                   <th>Website</th>
                   <th>LinkedIn</th>
                   <th>People</th>
@@ -943,6 +936,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                   if (!orgSearchQuery) return true;
                   const q = orgSearchQuery.toLowerCase();
                   return (org.name || '').toLowerCase().includes(q) || (org.website || '').toLowerCase().includes(q);
+                }).toSorted((a, b) => {
+                  const cmp = (a.name || '').localeCompare(b.name || '');
+                  return orgSort === 'asc' ? cmp : -cmp;
                 }).map(org => (
                   <tr key={org.id}>
                     <td><strong>{org.name}</strong></td>

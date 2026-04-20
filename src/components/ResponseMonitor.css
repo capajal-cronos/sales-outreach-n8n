@@ -18,6 +18,88 @@
   font-size: 0.9375rem;
 }
 
+/* ── Stats ── */
+.response-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  padding: 0.875rem 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 1.25rem;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 1.25rem;
+}
+
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.2rem;
+  white-space: nowrap;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 2rem;
+  background: var(--border-color);
+  flex-shrink: 0;
+}
+
+/* ── Orgs that replied ── */
+.orgs-replied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.orgs-replied-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 0.25rem;
+  white-space: nowrap;
+}
+
+.org-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 99px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.org-pill-count {
+  background: var(--bg-muted);
+  border-radius: 99px;
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
 /* ── Filters ── */
 .response-filters {
   display: flex;
@@ -78,6 +160,15 @@
   color: var(--text-secondary);
 }
 
+.th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.th-sortable:hover {
+  color: var(--text-primary);
+}
+
 .reply-row {
   border-bottom: 1px solid var(--border-subtle);
   cursor: pointer;
@@ -90,6 +181,42 @@
 
 .reply-row:hover {
   background: var(--bg-muted);
+}
+
+.reply-unread {
+  background: oklch(98% 0.01 250);
+}
+
+.reply-unread:hover {
+  background: oklch(96% 0.015 250);
+}
+
+.reply-unread .reply-sender {
+  font-weight: 700;
+}
+
+.unread-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary-color, oklch(55% 0.2 250));
+  margin-right: 0.5rem;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.unread-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+  background: var(--primary-color, oklch(55% 0.2 250));
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+  line-height: 1.6;
 }
 
 .reply-row td {
@@ -131,6 +258,103 @@
   color: var(--text-tertiary);
   white-space: nowrap;
   font-size: 0.8125rem !important;
+}
+
+.reply-status-cell {
+  white-space: nowrap;
+  padding: 0.5rem 1rem;
+}
+
+.reply-status-cell-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.status-select {
+  appearance: auto;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 99px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.status-select:hover {
+  border-color: var(--text-tertiary);
+}
+
+.status-select.status-followed-up {
+  border-color: #16a34a;
+  color: #16a34a;
+  background: #f0fdf4;
+}
+
+.status-select.status-not-interested {
+  border-color: #dc2626;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.archive-btn {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 99px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-muted);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.archive-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.unarchive-btn {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 99px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.unarchive-btn:hover {
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+
+/* ── Archived section ── */
+.archived-section {
+  margin-top: 2rem;
+}
+
+.archived-toggle {
+  background: none;
+  border: none;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0.25rem 0;
+  margin-bottom: 0.75rem;
+}
+
+.archived-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.archived-table {
+  opacity: 0.65;
 }
 
 /* ── Reply Modal ── */

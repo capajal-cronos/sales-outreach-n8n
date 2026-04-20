@@ -36,8 +36,11 @@ dist-ssr
 cert.pem
 config.yml
 
-# Database files
-data/
+# Database files (runtime state — not tracked)
+data/email_queue.json
+data/apollo_pending.json
+data/organizations.json
 *.json
 !package.json
 !package-lock.json
+!data/responses.json

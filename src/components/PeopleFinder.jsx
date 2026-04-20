@@ -187,6 +187,15 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
   const [isMakingLeads, setIsMakingLeads] = useState(false);
   const [makeLeadStatus, setMakeLeadStatus] = useState(null);
   const [peopleSearchQuery, setPeopleSearchQuery] = useState('');
+  const [peopleSort, setPeopleSort] = useState({ field: null, dir: 'asc' });
+
+  const toggleSort = (field) => {
+    setPeopleSort(prev =>
+      prev.field === field
+        ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { field, dir: 'asc' }
+    );
+  };
   const [orgSearchQuery, setOrgSearchQuery] = useState('');
 
   // Subscribe to module-level stores so data and in-flight fetches persist
@@ -571,11 +580,15 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
                       style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                     />
                   </th>
-                  <th>Name</th>
+                  <th onClick={() => toggleSort('name')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Name {peopleSort.field === 'name' ? (peopleSort.dir === 'asc' ? '↑' : '↓') : '↕'}
+                  </th>
                   <th>Headline</th>
                   <th>Email</th>
                   <th>Phone</th>
-                  <th>Organization</th>
+                  <th onClick={() => toggleSort('org')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Organization {peopleSort.field === 'org' ? (peopleSort.dir === 'asc' ? '↑' : '↓') : '↕'}
+                  </th>
                   <th>LinkedIn</th>
                 </tr>
               </thead>
@@ -587,6 +600,12 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
                   const email = (person.email && person.email[0] ? person.email[0].value : '').toLowerCase();
                   const org = (person.org_id?.name || '').toLowerCase();
                   return name.includes(q) || email.includes(q) || org.includes(q);
+                }).toSorted((a, b) => {
+                  if (!peopleSort.field) return 0;
+                  const valA = peopleSort.field === 'name' ? (a.name || '') : (a.org_id?.name || '');
+                  const valB = peopleSort.field === 'name' ? (b.name || '') : (b.org_id?.name || '');
+                  const cmp = valA.localeCompare(valB);
+                  return peopleSort.dir === 'asc' ? cmp : -cmp;
                 }).map(person => {
                   const headline = person.headline || '';
                   const linkedinUrl = person.linkedin_url || '';
@@ -603,18 +622,19 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
                         />
                       </td>
                       <td><strong>{person.name}</strong></td>
-                      <td style={{ fontSize: '0.9em', color: '#666' }}>
+                      <td style={{ fontSize: '0.9em', color: '#666', padding: 0 }}>
                         {person._detailFetchFailed ? (
-                          <span style={{ color: 'orange' }}>Failed to load</span>
+                          <span style={{ display: 'block', padding: '0.5rem 0.75rem', color: 'orange' }}>Failed to load</span>
                         ) : headline ? (
                           <span
-                            style={{ cursor: 'pointer', color: 'var(--primary-color)' }}
+                            className="headline-cell-trigger"
+                            style={{ display: 'block', padding: '0.5rem 0.75rem', cursor: 'pointer', color: 'var(--primary-color)' }}
                             onClick={(e) => { e.stopPropagation(); setHeadlineModal({ show: true, headline, name: person.name }); }}
                             title="Click to read full headline"
                           >
                             {headline}
                           </span>
-                        ) : '-'}
+                        ) : <span style={{ display: 'block', padding: '0.5rem 0.75rem' }}>-</span>}
                       </td>
                       <td>{person.email && person.email[0] ? person.email[0].value : '-'}</td>
                       <td>{person.phone && person.phone[0] ? person.phone[0].value : '-'}</td>

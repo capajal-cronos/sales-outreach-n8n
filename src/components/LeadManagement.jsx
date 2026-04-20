@@ -9,6 +9,8 @@ const DAILY_CAP_MAX = 50;
 const DAILY_CAP_STEP = 5;
 const DAILY_CAP_STORAGE_KEY = 'leadCampaign.dailyCap';
 const SENT_TODAY_STORAGE_KEY = 'leadCampaign.sentToday';
+const COOLDOWN_STORAGE_KEY = 'leadCampaign.cooldownDays';
+const EMAIL_PROMPT_STORAGE_KEY = 'leadCampaign.emailPrompt';
 
 const DEFAULT_EMAIL_PROMPT = `Write a personalized cold email.
 
@@ -74,9 +76,39 @@ function persistSentToday(count) {
   }
 }
 
+function loadCooldownDays() {
+  try {
+    const raw = localStorage.getItem(COOLDOWN_STORAGE_KEY);
+    if (raw === null) return '';
+    const n = parseInt(raw, 10);
+    return isNaN(n) ? '' : String(Math.max(0, Math.min(14, n)));
+  } catch {
+    return '';
+  }
+}
+
+function loadEmailPrompt() {
+  try {
+    const raw = localStorage.getItem(EMAIL_PROMPT_STORAGE_KEY);
+    return raw !== null ? raw : DEFAULT_EMAIL_PROMPT;
+  } catch {
+    return DEFAULT_EMAIL_PROMPT;
+  }
+}
+
 function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads = {}, onCampaignStarted, onCampaignDecided, workflowErrors = [], onDismissError }) {
   const [leads, setLeads] = useState(workflowData.leads || []);
   const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [leadsSort, setLeadsSort] = useState({ field: null, dir: 'asc' });
+
+  const toggleLeadsSort = (field) => {
+    setLeadsSort(prev =>
+      prev.field === field
+        ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { field, dir: 'asc' }
+    );
+  };
   const [isLoading, setIsLoading] = useState((workflowData.leads || []).length === 0);
   const [selectedLeads, setSelectedLeads] = useState([]);
   const [isSending, setIsSending] = useState(false);
@@ -84,9 +116,9 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
   const [labelMapping, setLabelMapping] = useState({});
   const [pendingEmails, setPendingEmails] = useState([]);
   const [editingEmail, setEditingEmail] = useState(null); // { ...email, editSubject, editBody }
-  const [emailPrompt, setEmailPrompt] = useState(DEFAULT_EMAIL_PROMPT);
+  const [emailPrompt, setEmailPrompt] = useState(loadEmailPrompt);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
-  const [cooldownDays, setCooldownDays] = useState('');
+  const [cooldownDays, setCooldownDays] = useState(loadCooldownDays);
   const [dailyCap, setDailyCap] = useState(loadDailyCap);
   const [sentToday, setSentToday] = useState(loadSentToday);
   const hasFetchedRef = useRef(false);
@@ -107,12 +139,16 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(DAILY_CAP_STORAGE_KEY, String(dailyCap));
-    } catch {
-      // ignore
-    }
+    try { localStorage.setItem(DAILY_CAP_STORAGE_KEY, String(dailyCap)); } catch { /* ignore */ }
   }, [dailyCap]);
+
+  useEffect(() => {
+    try { localStorage.setItem(COOLDOWN_STORAGE_KEY, cooldownDays); } catch { /* ignore */ }
+  }, [cooldownDays]);
+
+  useEffect(() => {
+    try { localStorage.setItem(EMAIL_PROMPT_STORAGE_KEY, emailPrompt); } catch { /* ignore */ }
+  }, [emailPrompt]);
 
   const incrementSentToday = () => {
     setSentToday(prev => {
@@ -203,10 +239,33 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
 
   const sortOrder = (lead) => isLastMail(lead) ? 2 : isAnswered(lead) ? 1 : 0;
 
+  const LABEL_ORDER = { first_mail: 0, second_mail: 1, third_mail: 2, last_mail: 3, 'last mail': 3, answered: 4 };
+  const labelSortVal = (lead) => {
+    const key = (lead.label || '').toLowerCase();
+    return key in LABEL_ORDER ? LABEL_ORDER[key] : -1;
+  };
+
+  const searchLower = search.trim().toLowerCase();
   const filteredLeads = (filter === 'all'
     ? leads
     : leads.filter(l => (l.label_ids || []).some(id => String(id) === filter))
-  ).toSorted((a, b) => sortOrder(a) - sortOrder(b));
+  ).filter(l => !searchLower
+    || (l.title || '').toLowerCase().includes(searchLower)
+    || (l.organization || '').toLowerCase().includes(searchLower)
+    || (l.email || '').toLowerCase().includes(searchLower)
+  ).toSorted((a, b) => {
+    if (leadsSort.field === 'label') {
+      const cmp = labelSortVal(a) - labelSortVal(b);
+      return leadsSort.dir === 'asc' ? cmp : -cmp;
+    }
+    if (leadsSort.field) {
+      const valA = leadsSort.field === 'title' ? (a.title || '') : (a.organization || '');
+      const valB = leadsSort.field === 'title' ? (b.title || '') : (b.organization || '');
+      const cmp = valA.localeCompare(valB);
+      return leadsSort.dir === 'asc' ? cmp : -cmp;
+    }
+    return sortOrder(a) - sortOrder(b);
+  });
 
   const eligibleLeads = leads.filter(l => !isExcluded(l) && !isCoolingDown(l));
 
@@ -384,6 +443,13 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
                     return <option key={id} value={id}>{name} ({count})</option>;
                   })}
               </select>
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search leads..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
             </div>
 
             <div className="bulk-actions">
@@ -487,10 +553,16 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
                   <th style={{ width: 40 }}>
                     <input type="checkbox" checked={allSelected} onChange={handleSelectAll} />
                   </th>
-                  <th>Title</th>
-                  <th>Organisation</th>
+                  <th onClick={() => toggleLeadsSort('title')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Title <span style={{ marginLeft: '0.375rem' }}>{leadsSort.field === 'title' ? (leadsSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                  </th>
+                  <th onClick={() => toggleLeadsSort('org')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Organisation <span style={{ marginRight: '0.5rem' }}>{leadsSort.field === 'org' ? (leadsSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                  </th>
                   <th>Email</th>
-                  <th>Label</th>
+                  <th onClick={() => toggleLeadsSort('label')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Label <span style={{ marginLeft: '0.375rem' }}>{leadsSort.field === 'label' ? (leadsSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                  </th>
                   <th>Last Contacted</th>
                 </tr>
               </thead>
