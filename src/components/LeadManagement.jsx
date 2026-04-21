@@ -115,6 +115,7 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
   const [actionResult, setActionResult] = useState(null);
   const [labelMapping, setLabelMapping] = useState({});
   const [pendingEmails, setPendingEmails] = useState([]);
+  const [pendingSearch, setPendingSearch] = useState('');
   const [editingEmail, setEditingEmail] = useState(null); // { ...email, editSubject, editBody }
   const [emailPrompt, setEmailPrompt] = useState(loadEmailPrompt);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -633,11 +634,21 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
           {pendingEmails.length > 0 && (
             <div className="pending-emails-container" style={{ marginTop: '2rem' }}>
               <div className="pending-header">
-                <h3>Pending Emails ({pendingEmails.length})</h3>
-                <p>Review and approve before sending</p>
+                <div>
+                  <h3>Pending Emails ({pendingEmails.length})</h3>
+                  <p>Review and approve before sending</p>
+                </div>
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder="Search by name..."
+                  style={{ marginRight: '3rem' }}
+                  value={pendingSearch}
+                  onChange={e => setPendingSearch(e.target.value)}
+                />
               </div>
               <div className="emails-list">
-                {pendingEmails.map(email => {
+                {pendingEmails.filter(e => !pendingSearch.trim() || (e.first_name || '').toLowerCase().includes(pendingSearch.trim().toLowerCase())).map(email => {
                   const isEditing = editingEmail?.id === email.id;
                   return (
                     <div key={email.id} className={`email-card pending${isEditing ? ' editing' : ''}`}>
