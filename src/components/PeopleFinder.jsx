@@ -197,6 +197,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
     );
   };
   const [orgSearchQuery, setOrgSearchQuery] = useState('');
+  const [orgLabelMapping, setOrgLabelMapping] = useState({});
 
   // Subscribe to module-level stores so data and in-flight fetches persist
   // across tab switches. Remounting no longer restarts or drops fetches.
@@ -213,6 +214,20 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
     orgsStore.listeners.add(syncOrgs);
     ensurePersonsLoaded();
     ensureOrgsLoaded();
+
+    fetch(`https://api.pipedrive.com/v1/organizationFields?api_token=${PIPEDRIVE_API_KEY}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.success) return;
+        const labelField = data.data?.find(f => f.key === 'label');
+        if (labelField?.options) {
+          const mapping = {};
+          labelField.options.forEach(opt => { mapping[opt.id] = opt.label; });
+          setOrgLabelMapping(mapping);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       personsStore.listeners.delete(syncPersons);
       orgsStore.listeners.delete(syncOrgs);
@@ -715,7 +730,10 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
                       {pipedriveOrganizations.filter(org => {
                         if (!orgSearchQuery) return true;
                         const q = orgSearchQuery.toLowerCase();
-                        return (org.name || '').toLowerCase().includes(q) || (org.website || '').toLowerCase().includes(q);
+                        const labelName = (orgLabelMapping[org.label] || '').toLowerCase();
+                        return (org.name || '').toLowerCase().includes(q)
+                          || (org.website || '').toLowerCase().includes(q)
+                          || labelName.includes(q);
                       }).map(org => {
                         const isSelected = searchParams.selectedOrganizations.includes(org.id);
                         return (

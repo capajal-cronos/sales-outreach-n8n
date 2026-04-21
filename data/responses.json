@@ -1,5 +1,35 @@
 [
   {
+    "id": "1776779607018vhlieakei",
+    "from": "albancronos@gmail.com",
+    "subject": "Re: Quick question, Lander",
+    "date": "Tue, 21 Apr 2026 15:53:14 +0200",
+    "body": "I'm interested.",
+    "snippet": "I'm interested.",
+    "person_id": null,
+    "person_name": "Alban",
+    "lead_id": "test-lead-id",
+    "lead_title": "Alban",
+    "stage": "unknown",
+    "original": "De Cronos Groep has scaled from Kontich to five continents, serving ~5,000\ncustomers and backing 600+ companies.\n\nI'm Alban at Cronos. Curious how you decide which new technology\ninitiatives (or early-stage investments) are worth prioritizing across such\na broad portfolio.\n\nWould it be crazy to compare notes for 10 minutes to see if there's a fit\nfor a lightweight collaboration?",
+    "received_at": "2026-04-21T13:53:27.018Z"
+  },
+  {
+    "id": "1776769970715f0fp89q86",
+    "from": "albancronos@gmail.com",
+    "subject": "Re: Elindus & day-ahea",
+    "date": "Tue, 21 Apr 2026 13:12:19 +0200",
+    "body": "test2",
+    "snippet": "test2",
+    "person_id": null,
+    "person_name": "Alban",
+    "lead_id": "test-lead-id",
+    "lead_title": "(test reply)",
+    "stage": "unknown",
+    "original": "Hi Klaas - test\n\n\nbye",
+    "received_at": "2026-04-21T11:12:50.715Z"
+  },
+  {
     "id": "1776762743370iq2o7bxnv",
     "from": "albancronos@gmail.com",
     "subject": "Re: Helping ALDI Belgium stay lean at 440+ stores",

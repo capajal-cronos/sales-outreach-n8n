@@ -58,6 +58,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const [notification, setNotification] = useState(null); // { type: 'success'|'error'|'warning', message: string }
   const notificationTimer = useRef(null);
   const waitingTimeoutRef = useRef(null);
+  const domainPollRef = useRef(null);
   const fileInputRef = useRef(null);
   const locationInputRef = useRef(null);
 
@@ -535,15 +536,42 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
 
       setSearchResults(allOrganizations);
 
-      // If the webhook returned no direct results, the n8n workflow is
-      // likely processing asynchronously — keep showing a spinner until
-      // the polling picks up new apolloPendingOrgs, or timeout after 30s.
       if (allOrganizations.length === 0) {
         setIsWaitingForResults(true);
         if (waitingTimeoutRef.current) clearTimeout(waitingTimeoutRef.current);
+        if (domainPollRef.current) clearInterval(domainPollRef.current);
+
+        const searchedDomain = searchMode === 'manual' ? cleanDomain(searchParams.organizationDomain) : null;
+        const orgCountBefore = pipedriveOrganizations.length;
+
+        // Domain searches add directly to Pipedrive without returning results to the frontend.
+        // Poll the Pipedrive org list so we can detect when the org lands there.
+        if (searchedDomain) {
+          domainPollRef.current = setInterval(async () => {
+            try {
+              const res = await fetch(`https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`);
+              if (!res.ok) return;
+              const data = await res.json();
+              if (!data.success || !data.data) return;
+              if (data.data.length > orgCountBefore) {
+                clearInterval(domainPollRef.current);
+                clearTimeout(waitingTimeoutRef.current);
+                setIsWaitingForResults(false);
+                await fetchPipedriveOrganizations();
+                showNotification('success', 'Organization added to Pipedrive successfully.');
+              }
+            } catch { /* ignore */ }
+          }, 3000);
+        }
+
         waitingTimeoutRef.current = setTimeout(() => {
+          if (domainPollRef.current) clearInterval(domainPollRef.current);
           setIsWaitingForResults(false);
-          showNotification('warning', 'No organizations found. Check your search query and try again.');
+          if (searchedDomain) {
+            showNotification('warning', 'Timed out waiting for results. If the organization was added it will appear in the list above after a refresh.');
+          } else {
+            showNotification('warning', 'No organizations found. Check your search query and try again.');
+          }
         }, 18000);
       }
     } catch (err) {
@@ -772,7 +800,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      if (domainPollRef.current) clearInterval(domainPollRef.current);
+      if (waitingTimeoutRef.current) clearTimeout(waitingTimeoutRef.current);
+    };
   }, []);
 
   return (
