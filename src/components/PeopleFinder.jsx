@@ -1,7 +1,16 @@
 import { useState, useEffect } from 'react';
+import { N8N_ENDPOINTS } from '../config/n8n';
 import './PeopleFinder.css';
 
 const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
+const PERSON_LINKEDIN_KEY = import.meta.env.VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY;
+const PERSON_HEADLINE_KEY = import.meta.env.VITE_PIPEDRIVE_PERSON_HEADLINE_KEY;
+const ORG_APOLLO_ID_KEY   = import.meta.env.VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY;
+
+if (!PERSON_LINKEDIN_KEY || !PERSON_HEADLINE_KEY || !ORG_APOLLO_ID_KEY) {
+  // eslint-disable-next-line no-console
+  console.warn('[PeopleFinder] Missing Pipedrive field keys in .env — run `npm run setup:pipedrive` to populate them.');
+}
 
 // Module-level stores survive component unmount. Switching tabs mid-fetch
 // no longer restarts the fetch or drops already-loaded persons/orgs.
@@ -29,8 +38,8 @@ async function fetchPersonDetail(person) {
           let headline = '';
           let linkedinUrl = '';
           if (personData.custom_fields) {
-            linkedinUrl = personData.custom_fields['7b02e9595a92744d8da04aaf22be9bbb17cb4a67'] || '';
-            headline = personData.custom_fields['86c0c96c777b219fb2989b0121c709d30882d384'] || '';
+            linkedinUrl = (PERSON_LINKEDIN_KEY && personData.custom_fields[PERSON_LINKEDIN_KEY]) || '';
+            headline    = (PERSON_HEADLINE_KEY && personData.custom_fields[PERSON_HEADLINE_KEY]) || '';
           }
           return { ...person, headline, linkedin_url: linkedinUrl };
         }
@@ -119,7 +128,7 @@ async function runOrgsFetch() {
               if (detailResponse.ok) {
                 const detailData = await detailResponse.json();
                 if (detailData.success && detailData.data) {
-                  const apolloId = detailData.data['596a7f23303e67be9328a9f09ce7f4979caf2c7f'];
+                  const apolloId = ORG_APOLLO_ID_KEY ? detailData.data[ORG_APOLLO_ID_KEY] : undefined;
                   return { ...detailData.data, apollo_id: apolloId };
                 }
                 return detailData.success && detailData.data ? detailData.data : org;
@@ -369,7 +378,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
           };
 
           try {
-            const response = await fetch('https://aigeneers.app.n8n.cloud/webhook/find-people', {
+            const response = await fetch(N8N_ENDPOINTS.findPeople, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(requestBody)
@@ -455,7 +464,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
 
     setIsSaving(true);
     try {
-      await fetch('https://aigeneers.app.n8n.cloud/webhook/save-people', {
+      await fetch(N8N_ENDPOINTS.savePeople, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ people: withEmail, pipedrive_org_mapping: currentOrgMapping })
@@ -505,7 +514,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
     try {
       const selectedPersons = pipedrivePersons.filter(p => selectedPipedrivePeople.has(p.id));
 
-      const response = await fetch('https://aigeneers.app.n8n.cloud/webhook/make-leads', {
+      const response = await fetch(N8N_ENDPOINTS.makeLeads, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

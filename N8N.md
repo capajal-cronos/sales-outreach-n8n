@@ -64,12 +64,11 @@ return { json: email };
 |---------|-------|
 | Method | POST |
 | Path | `email-approval` |
-| Full URL | `https://aigeneers.app.n8n.cloud/webhook/email-approval` |
+| Full URL | `https://your-n8n.app.n8n.cloud/webhook/email-approval` |
 
-Add to `.env`:
-```env
-N8N_APPROVAL_WEBHOOK_URL=https://aigeneers.app.n8n.cloud/webhook/email-approval
-```
+Make sure `VITE_N8N_BASE_URL` in `.env` points at your n8n webhook base
+(`https://your-n8n.app.n8n.cloud/webhook`). The approval endpoint is derived
+from it as `${VITE_N8N_BASE_URL}/email-approval`.
 
 ### Payload
 
@@ -110,7 +109,7 @@ const stageToLabelMap = {
 ### Test
 
 ```bash
-curl -X POST https://aigeneers.app.n8n.cloud/webhook/email-approval \
+curl -X POST https://your-n8n.app.n8n.cloud/webhook/email-approval \
   -H "Content-Type: application/json" \
   -d '{"lead_id":"12345","decision":"approve","email_data":{"email":"test@example.com","email_stage":"first_mail","subject":"...","body":"..."},"timestamp":"2026-04-08T08:30:00.000Z"}'
 ```
@@ -171,7 +170,7 @@ cloudflared tunnel delete sales-outreach-n8n
 |---------|-----|
 | Emails not appearing in UI | Backend running on port 3001? HTTP Request node succeeding? |
 | n8n can't reach localhost | Use Cloudflare Tunnel (section 3) |
-| Webhook not firing | Check `N8N_APPROVAL_WEBHOOK_URL` in `.env`, verify webhook is active in n8n |
+| Webhook not firing | Check `VITE_N8N_BASE_URL` in `.env`, verify webhook is active in n8n |
 | Email not sending after approval | Check IF node condition and SMTP credentials |
 | `tunnel credentials not found` | Re-run `cloudflared tunnel login` |
 | Tunnel URL returns error | Check tunnel is **Healthy** in Cloudflare dashboard |

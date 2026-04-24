@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import readXlsxFile from 'read-excel-file/browser';
+import { N8N_ENDPOINTS } from '../config/n8n';
 import './OrganizationSearch.css';
 
 function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflowErrors = [], onDismissError }) {
@@ -62,12 +63,12 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const fileInputRef = useRef(null);
   const locationInputRef = useRef(null);
 
-  // Get configuration from environment variables
-  const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL_MANUAL_ORGANIZATION || 'https://aigeneers.app.n8n.cloud/webhook/organizations';
-  const N8N_FILTERS_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL_FILTERS_ORGANIZATION || 'https://aigeneers.app.n8n.cloud/webhook/organization-filters';
-  const N8N_FILE_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook/organizations-file';
-  const N8N_APOLLO_ACCEPTED_URL = import.meta.env.VITE_N8N_APOLLO_ACCEPTED_URL || 'https://aigeneers.app.n8n.cloud/webhook/apollo-accepted-organizations';
+  const N8N_WEBHOOK_URL = N8N_ENDPOINTS.organizations;
+  const N8N_FILTERS_WEBHOOK_URL = N8N_ENDPOINTS.organizationFilters;
+  const N8N_FILE_WEBHOOK_URL = N8N_ENDPOINTS.organizationsFile;
+  const N8N_APOLLO_ACCEPTED_URL = N8N_ENDPOINTS.apolloAcceptedOrganizations;
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
+  const ORG_APOLLO_ID_KEY = import.meta.env.VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY;
 
   // Initialize on mount
   useEffect(() => {
@@ -143,7 +144,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                 if (detailResponse.ok) {
                   const detailData = await detailResponse.json();
                   if (detailData.success && detailData.data) {
-                    const apolloId = detailData.data['596a7f23303e67be9328a9f09ce7f4979caf2c7f'];
+                    const apolloId = ORG_APOLLO_ID_KEY ? detailData.data[ORG_APOLLO_ID_KEY] : undefined;
                     return { ...detailData.data, apollo_id: apolloId };
                   }
                 }

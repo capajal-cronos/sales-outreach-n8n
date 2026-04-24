@@ -3,6 +3,8 @@
 React + Express app for managing sales outreach via n8n. Four-stage workflow:
 **Find Organizations → Find People → Leads & Campaign → Monitor Responses**
 
+**New here? Start with [SETUP.md](./SETUP.md) — 5 steps, ~15 minutes.**
+
 ## Setup
 
 ```bash
@@ -10,15 +12,34 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` (see `.env.example` for the full list — key values):
 ```env
-VITE_N8N_WEBHOOK_URL=your_n8n_webhook_url
+VITE_N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook
 VITE_PIPEDRIVE_API_KEY=your_pipedrive_api_key
-N8N_APPROVAL_WEBHOOK_URL=https://your-n8n.app.n8n.cloud/webhook/email-approval
 CLOUDFLARE_TUNNEL_NAME=sales-outreach-n8n
 CLOUDFLARE_TUNNEL_URL=https://your-tunnel-url.com
 PORT=3001
 ```
+
+### Pipedrive one-time setup
+
+The n8n workflow expects specific custom fields on persons/organizations and a set
+of lead labels. Run this once against the target Pipedrive account:
+
+```bash
+npm run setup:pipedrive
+```
+
+It creates (and skips if already present):
+- **Person fields:** `linkedin_url`, `headline`, `seniority`, `address`
+- **Organization fields:** `company_description`, `apollo_id`
+- **Lead labels:** `first_mail`, `second_mail`, `third_mail`, `last_mail`, `answered`
+
+On success it writes the generated field keys into `.env` automatically
+(`VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY`, `VITE_PIPEDRIVE_PERSON_HEADLINE_KEY`,
+`VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY`) — existing values are replaced in place,
+other entries untouched. It also prints a `stageToLabelMap` block ready to
+paste into the n8n "Update Pipedrive Label" node (see [N8N.md](./N8N.md)).
 
 Cloudflare Tunnel is required if n8n runs in the cloud — see [N8N.md](./N8N.md).
 
@@ -41,6 +62,7 @@ Starts:
 | `npm run dev` | Frontend only |
 | `npm run server` | API only |
 | `npm run tunnel` | Tunnel only |
+| `npm run setup:pipedrive` | Create Pipedrive custom fields + lead labels |
 | `npm run build` | Production build |
 
 ## Project Structure

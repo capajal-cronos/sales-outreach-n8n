@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
+import { N8N_ENDPOINTS } from '../config/n8n';
 import './LeadManagement.css';
 import './EmailCampaign.css';
 
-const N8N_WEBHOOK_URL = 'https://aigeneers.app.n8n.cloud/webhook/send-leads-mails';
+const N8N_WEBHOOK_URL = N8N_ENDPOINTS.sendLeadsMails;
 const EXCLUDED_LABELS = ['answered', 'last_mail', 'last mail'];
 
 const DAILY_CAP_MAX = 50;

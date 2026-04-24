@@ -254,12 +254,13 @@ app.post('/api/emails/decision', async (req, res) => {
       });
     }
 
-    // Check n8n webhook is configured before deleting from queue
-    const n8nWebhookUrl = process.env.N8N_APPROVAL_WEBHOOK_URL;
-    if (!n8nWebhookUrl) {
-      console.error('N8N_APPROVAL_WEBHOOK_URL not configured');
-      return res.status(500).json({ success: false, error: 'N8N_APPROVAL_WEBHOOK_URL is not configured on the server' });
+    // Check n8n base URL is configured before deleting from queue
+    const n8nBaseUrl = (process.env.VITE_N8N_BASE_URL || '').replace(/\/+$/, '');
+    if (!n8nBaseUrl) {
+      console.error('VITE_N8N_BASE_URL not configured');
+      return res.status(500).json({ success: false, error: 'VITE_N8N_BASE_URL is not configured on the server' });
     }
+    const n8nWebhookUrl = `${n8nBaseUrl}/email-approval`;
 
     // Remove email from queue
     if (email_data && email_data.id) {

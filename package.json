@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "server": "node server.js",
     "tunnel": "node start-cloudflare.js",
+    "setup:pipedrive": "node scripts/setupPipedrive.js",
     "start": "concurrently \"npm run dev\" \"npm run server\" \"npm run tunnel\""
   },
   "dependencies": {
