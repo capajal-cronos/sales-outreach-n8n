@@ -79,11 +79,11 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
     init();
   }, []);
 
-  // Update workflowData when pipedriveOrganizations changes
+  // Update workflowData when pipedriveOrganizations changes.
+  // Sync empty arrays too — otherwise the sidebar badge keeps showing
+  // a stale count from localStorage after all orgs are deleted.
   useEffect(() => {
-    if (pipedriveOrganizations.length > 0) {
-      updateWorkflowData('organizations', pipedriveOrganizations);
-    }
+    updateWorkflowData('organizations', pipedriveOrganizations);
   }, [pipedriveOrganizations]);
 
   // Poll for new Apollo results every 5 seconds

@@ -243,11 +243,11 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
     };
   }, []);
 
-  // Update workflowData when pipedrivePersons changes
+  // Update workflowData when pipedrivePersons changes.
+  // Sync empty arrays too — otherwise the sidebar badge keeps showing
+  // a stale count from localStorage after all persons are deleted.
   useEffect(() => {
-    if (pipedrivePersons.length > 0) {
-      updateWorkflowData('people', pipedrivePersons);
-    }
+    updateWorkflowData('people', pipedrivePersons);
   }, [pipedrivePersons]);
 
   const seniorities = [
