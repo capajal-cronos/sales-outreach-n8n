@@ -35,10 +35,10 @@ const ORGANIZATION_FIELDS = [
 // Pipedrive lead labels require a color from this fixed palette:
 // green, red, yellow, blue, purple, gray
 const LEAD_LABELS = [
-  { name: 'first_mail',  color: 'blue'   },
-  { name: 'second_mail', color: 'yellow' },
-  { name: 'third_mail',  color: 'purple' },
-  { name: 'last_mail',   color: 'red'    },
+  { name: 'first_mail',  color: 'gray' },
+  { name: 'second_mail', color: 'gray' },
+  { name: 'third_mail',  color: 'gray' },
+  { name: 'last_mail',   color: 'gray' },
   { name: 'answered',    color: 'green'  },
 ];
 
@@ -191,9 +191,10 @@ async function main() {
   const orgKeys = byName(orgResults);
 
   const envEntries = {
-    VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY: personKeys.linkedin_url || '',
-    VITE_PIPEDRIVE_PERSON_HEADLINE_KEY: personKeys.headline     || '',
-    VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY:   orgKeys.apollo_id       || '',
+    VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY:           personKeys.linkedin_url        || '',
+    VITE_PIPEDRIVE_PERSON_HEADLINE_KEY:           personKeys.headline            || '',
+    VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY:             orgKeys.apollo_id              || '',
+    VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY:   orgKeys.company_description    || '',
   };
   const { updated, appended } = upsertEnv(envEntries);
   printHeader('.env updated');

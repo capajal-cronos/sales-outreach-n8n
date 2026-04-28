@@ -53,7 +53,7 @@ In n8n:
    - Apollo API (or HTTP Request with their Apollo token)
    - SMTP / Gmail / whatever sender they use
    - OpenAI / Anthropic (if the email-generation node uses one)
-4. **Activate** the workflow
+4. **Publish** the workflow
 5. Confirm each webhook URL — they should all share the same base
 6. Put that base URL into `.env` as `VITE_N8N_BASE_URL`
 
