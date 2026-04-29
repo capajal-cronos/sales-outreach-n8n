@@ -164,7 +164,6 @@ export async function initializeApolloPending() {
   try {
     await ensureDataDir();
     await writeApolloPending([]);
-    console.log('✅ Apollo pending database initialized (cleared)');
   } catch (error) {
     console.error('Failed to initialize Apollo pending database:', error);
   }

@@ -9,6 +9,16 @@ import WorkflowProgress from './components/WorkflowProgress';
 const CAMPAIGN_TIMEOUT_MS = 10 * 60 * 1000;
 const GRACE_MS = 45000; // 45s — enough time for n8n to generate and queue the email
 
+// Wipe Pipedrive-derived caches once per `npm start` (dev server restart).
+// VITE_DEV_SESSION_ID is generated fresh by the `dev` script on each boot.
+const SESSION_ID = import.meta.env.VITE_DEV_SESSION_ID || '';
+const STORED_SESSION_KEY = 'n8n-session-id';
+if (SESSION_ID && localStorage.getItem(STORED_SESSION_KEY) !== SESSION_ID) {
+  localStorage.removeItem('n8n-workflow-data');
+  localStorage.removeItem('n8n-campaign-pending');
+  localStorage.setItem(STORED_SESSION_KEY, SESSION_ID);
+}
+
 function App() {
   const [currentStep, setCurrentStep] = useState(() => {
     const saved = localStorage.getItem('n8n-current-step');

@@ -4,13 +4,13 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "VITE_DEV_SESSION_ID=$(node -p Date.now()) vite",
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server.js",
     "tunnel": "node start-cloudflare.js",
     "setup:pipedrive": "node scripts/setupPipedrive.js",
-    "start": "concurrently \"npm run dev\" \"npm run server\" \"npm run tunnel\""
+    "start": "concurrently -n vite,api,tunnel -c blue,green,magenta \"npm --silent run dev\" \"npm --silent run server\" \"npm --silent run tunnel\""
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -477,17 +477,5 @@ app.delete('/api/workflow-errors/:id', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 API server running on http://localhost:${PORT}`);
-  console.log(`\n🔍 Apollo:`);
-  console.log(`   POST http://localhost:${PORT}/api/apollo/results - Store Apollo search results`);
-  console.log(`   GET  http://localhost:${PORT}/api/apollo/pending - Get pending Apollo organizations`);
-  console.log(`   POST http://localhost:${PORT}/api/apollo/decisions - Accept/decline Apollo orgs`);
-  console.log(`\n📧 Email Queue:`);
-  console.log(`   POST http://localhost:${PORT}/api/email-queue - Add email(s) to queue (n8n)`);
-  console.log(`   GET  http://localhost:${PORT}/api/email-queue/pending - Get pending emails`);
-  console.log(`   GET  http://localhost:${PORT}/api/email-queue?status=X - Get emails by status`);
-  console.log(`   POST http://localhost:${PORT}/api/emails/decision - Approve or decline email`);
-  console.log(`   DEL  http://localhost:${PORT}/api/email-queue/:id - Delete email`);
-  console.log(`📋 GET  http://localhost:${PORT}/api/leads - Get leads from Pipedrive`);
-  console.log(`🧹 DEL  http://localhost:${PORT}/api/apollo/pending - Clear Apollo pending queue`);
+  console.log(`API ready on http://localhost:${PORT}`);
 });
