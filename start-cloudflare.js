@@ -28,11 +28,15 @@ async function startCloudflare() {
       stdio: ['ignore', 'ignore', 'pipe']
     });
 
+    const reconnectNoise = /(failed to accept incoming stream requests|failed to run the datagram handler|failed to serve tunnel connection|Serve tunnel error|Connection terminated|no recent network activity|context canceled|datagram manager encountered a failure|accept stream listener encountered a failure)/;
+
     tunnelProcess.stderr.on('data', chunk => {
       const text = chunk.toString();
       for (const line of text.split('\n')) {
         if (!line.trim()) continue;
-        if (/\b(WRN|ERR|FTL)\b/.test(line)) process.stderr.write(line + '\n');
+        if (!/\b(WRN|ERR|FTL)\b/.test(line)) continue;
+        if (reconnectNoise.test(line)) continue;
+        process.stderr.write(line + '\n');
       }
     });
 

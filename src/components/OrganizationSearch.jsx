@@ -433,8 +433,8 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           }
         }
         
-        // If domain is provided, return only 1 result, otherwise use perPage
-        const resultsPerPage = searchParams.organizationDomain ? 1 : searchParams.perPage;
+        // If domain is provided, return only 1 result, otherwise use perPage (default 5 when blank)
+        const resultsPerPage = searchParams.organizationDomain ? 1 : (searchParams.perPage || 5);
 
         requestBody = {
           mode: 'manual',
@@ -471,7 +471,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           q_organization_keyword_tags: searchParams.organizationIndustryTagIds
             .filter(tag => tag && tag.trim()),
           page: 1,
-          per_page: searchParams.perPage || 10
+          per_page: searchParams.perPage || 5
         };
 
         // Add revenue range if selected (use first selected range)
@@ -487,7 +487,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
 
       // Fetch multiple pages to get more results
       const maxPages = searchParams.maxPages || 4;
-      const perPage = searchParams.perPage || 25;
+      const perPage = searchParams.perPage || 5;
       let allOrganizations = [];
 
       for (let page = 1; page <= maxPages; page++) {
@@ -1254,7 +1254,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                         type="number"
                         min="1"
                         max="50"
-                        placeholder="10"
+                        placeholder="5"
                         value={searchParams.perPage || ''}
                         onChange={(e) => {
                           const value = e.target.value;
@@ -1267,14 +1267,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                             }
                           }
                         }}
-                        onBlur={(e) => {
-                          if (e.target.value === '' || parseInt(e.target.value) < 1) {
-                            handleInputChange('perPage', 10);
-                          }
-                        }}
                       />
                     </div>
-                    <div className="setting-hint">max 50</div>
+                    <div className="setting-hint">max 50 — defaults to 5 if left blank</div>
                   </div>
                 </div>
               </div>
@@ -1416,7 +1411,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                         type="number"
                         min="1"
                         max="50"
-                        placeholder="10"
+                        placeholder="5"
                         value={searchParams.perPage || ''}
                         onChange={(e) => {
                           const value = e.target.value;
@@ -1429,14 +1424,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                             }
                           }
                         }}
-                        onBlur={(e) => {
-                          if (e.target.value === '' || parseInt(e.target.value) < 1) {
-                            handleInputChange('perPage', 10);
-                          }
-                        }}
                       />
                     </div>
-                    <div className="setting-hint">max 50</div>
+                    <div className="setting-hint">max 50 — defaults to 5 if left blank</div>
                   </div>
                 </div>
               </div>
