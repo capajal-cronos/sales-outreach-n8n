@@ -69,6 +69,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const N8N_APOLLO_ACCEPTED_URL = N8N_ENDPOINTS.apolloAcceptedOrganizations;
   const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
   const ORG_APOLLO_ID_KEY = import.meta.env.VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY;
+  const ORG_DESCRIPTION_KEY = import.meta.env.VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY;
 
   // Initialize on mount
   useEffect(() => {
@@ -448,7 +449,9 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           per_page: resultsPerPage,
           fileData: "",
           fileName: "",
-          fileType: ""
+          fileType: "",
+          apollo_id_key: ORG_APOLLO_ID_KEY,
+          description_key: ORG_DESCRIPTION_KEY
         };
       } else if (searchMode === 'filters') {
         // Filter-based search mode - Format for Apollo.io API

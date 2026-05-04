@@ -8,6 +8,56 @@ const __dirname = path.dirname(__filename);
 // Database file paths
 const EMAIL_QUEUE_FILE = path.join(__dirname, '../../data/email_queue.json');
 const APOLLO_PENDING_FILE = path.join(__dirname, '../../data/apollo_pending.json');
+const SENT_EMAILS_FILE = path.join(__dirname, '../../data/sent_emails.json');
+
+// Strip quoted thread from a reply body. Handles Outlook (multi-language
+// "From:/Van:/Von:/De:" headers, "_____" separators), Gmail ("On <date> wrote:"
+// in EN/NL/DE/FR), classic "-----Original Message-----", and `> ` quote lines.
+// Returns { reply, quoted }.
+function splitReplyAndQuote(text) {
+  if (typeof text !== 'string' || !text) return { reply: '', quoted: '' };
+  const normalized = text.replace(/\r\n/g, '\n');
+
+  const markers = [
+    /\s_{5,}\s*/,
+    /(?:^|\n|\s)(?:From|Van|De|Von|Da):\s+\S[\s\S]{1,400}?(?:Sent|Verzonden|Envoyé|Gesendet|Inviato):/i,
+    /-{3,}\s*Original Message\s*-{3,}/i,
+    /\bOn\s[\s\S]{1,300}?\bwrote:\s*$/im,
+    /\bOp\s[\s\S]{1,300}?\bschreef\s+\S[\s\S]{0,200}?:\s*$/im,
+    /\bLe\s[\s\S]{1,300}?\ba\s+écrit\s*:\s*$/im,
+    /\bAm\s[\s\S]{1,300}?\bschrieb\s+\S[\s\S]{0,200}?:\s*$/im,
+    /\n>\s/,
+  ];
+
+  let cutAt = -1;
+  for (const re of markers) {
+    const m = normalized.match(re);
+    if (m && typeof m.index === 'number' && (cutAt === -1 || m.index < cutAt)) {
+      cutAt = m.index;
+    }
+  }
+
+  if (cutAt === -1) return { reply: normalized.trim(), quoted: '' };
+  return {
+    reply: normalized.slice(0, cutAt).trim(),
+    quoted: normalized.slice(cutAt).trim(),
+  };
+}
+
+// Strip the Outlook header block ("Van: ... Onderwerp: <subject>") and
+// Microsoft's "You don't often get email from..." disclaimer, leaving only
+// the body of the original email.
+function extractOriginalFromQuoted(quoted) {
+  if (!quoted) return '';
+  let out = quoted.replace(/^_+\s*/, '');
+  const headerRe = /^(?:From|Van|De|Von|Da):[\s\S]*?(?:Subject|Onderwerp|Objet|Betreff|Oggetto):[^\n]*\n?/i;
+  out = out.replace(headerRe, '');
+  out = out.replace(
+    /\[(?:You\s+don['’]t\s+often\s+get\s+email|U\s+ontvang(?:t)?\s+niet\s+vaak\s+e-mail|Vous\s+ne\s+recevez\s+pas\s+souvent)[^[\]]*\]/gi,
+    ''
+  );
+  return out.trim();
+}
 
 // Helper function to clean domain URLs
 function cleanDomain(domain) {
@@ -209,7 +259,7 @@ export async function addResponse(responseData) {
     : fromRaw;
 
   // Body: try every field name n8n might use
-  const body = responseData.text
+  const rawBody = responseData.text
     || responseData.body
     || responseData.snippet
     || responseData.message
@@ -218,24 +268,98 @@ export async function addResponse(responseData) {
     || responseData.htmlBody
     || '';
 
+  // Split the reply from the quoted thread. Works for Outlook (Dutch/EN/DE/FR
+  // headers + underline separators), Gmail's "On <date> wrote:" forms, classic
+  // "-----Original Message-----", and `> `-quoted plain text.
+  const { reply, quoted } = splitReplyAndQuote(rawBody);
+
+  // Recover the original email. Priority:
+  // 1. What n8n explicitly sent (Gmail path already does this).
+  // 2. The body of the email we sent for this lead (looked up in the queue).
+  // 3. Whatever survives after stripping the Outlook header from the quoted block.
+  let original = (responseData.original || '').trim();
+  if (!original && responseData.lead_id) {
+    original = (await findSentBodyForLead(responseData.lead_id)) || '';
+  }
+  if (!original) {
+    original = extractOriginalFromQuoted(quoted);
+  }
+
+  const cleanReply = reply || rawBody;
+
   const newResponse = {
     id: Date.now().toString() + Math.random().toString(36).substring(2, 11),
     from,
     subject: responseData.subject || '',
     date: responseData.date || new Date().toISOString(),
-    body,
-    snippet: responseData.snippet || body.slice(0, 200),
+    body: cleanReply,
+    snippet: cleanReply.slice(0, 200),
     person_id: responseData.person_id || null,
     person_name: responseData.person_name || '',
     lead_id: responseData.lead_id || null,
     lead_title: responseData.lead_title || '',
     stage: responseData.stage || '',
-    original: responseData.original || '',
+    original,
     received_at: new Date().toISOString()
   };
   responses.unshift(newResponse); // newest first
   await writeResponses(responses);
   return newResponse;
+}
+
+// Append an approved email to the persistent sent archive so the original
+// is recoverable when a reply comes in (the live queue gets cleared on send).
+export async function archiveSentEmail(email) {
+  if (!email || !email.lead_id) return;
+  try {
+    await ensureDataDir();
+    let archive = [];
+    try {
+      const data = await fs.readFile(SENT_EMAILS_FILE, 'utf-8');
+      archive = JSON.parse(data.trim() || '[]');
+      if (!Array.isArray(archive)) archive = [];
+    } catch (err) {
+      if (err.code !== 'ENOENT') console.error('sent_emails.json parse error, resetting:', err);
+    }
+    archive.push({
+      lead_id: email.lead_id,
+      email: email.email || '',
+      subject: email.subject || '',
+      body: email.body || '',
+      email_stage: email.email_stage || '',
+      sent_at: new Date().toISOString()
+    });
+    await fs.writeFile(SENT_EMAILS_FILE, JSON.stringify(archive, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to archive sent email:', err);
+  }
+}
+
+// Look up the body of the most recently sent email for a lead. Reads the
+// persistent archive first, falls back to the live queue for in-flight emails.
+async function findSentBodyForLead(leadId) {
+  if (!leadId) return '';
+  try {
+    let archive = [];
+    try {
+      const data = await fs.readFile(SENT_EMAILS_FILE, 'utf-8');
+      archive = JSON.parse(data.trim() || '[]');
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+    const archiveMatch = (archive || [])
+      .filter(e => e.lead_id === leadId)
+      .sort((a, b) => new Date(b.sent_at || 0) - new Date(a.sent_at || 0))[0];
+    if (archiveMatch && archiveMatch.body) return archiveMatch.body.trim();
+
+    const queue = await readEmailQueue();
+    const queueMatch = queue
+      .filter(e => e.lead_id === leadId)
+      .sort((a, b) => new Date(b.reviewed_at || b.created_at || 0) - new Date(a.reviewed_at || a.created_at || 0))[0];
+    return (queueMatch?.body || '').trim();
+  } catch {
+    return '';
+  }
 }
 
 export async function getAllResponses() {

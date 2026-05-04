@@ -15,7 +15,8 @@ import {
   deleteEmailFromQueue,
   clearEmailsByStatus,
   addResponse,
-  getAllResponses
+  getAllResponses,
+  archiveSentEmail
 } from './src/api/serverDatabase.js';
 
 const app = express();
@@ -130,12 +131,16 @@ app.get('/api/leads', async (req, res) => {
 
         // person_id can be a plain integer or an object {value: id} depending on API version
         const personId = lead.person_id?.value ?? lead.person_id;
+        let personEmails = [];
         if (personId) {
           try {
             const personResponse = await fetch(`https://api.pipedrive.com/v1/persons/${personId}?api_token=${PIPEDRIVE_API_KEY}`);
             if (personResponse.ok) {
               const personData = await personResponse.json();
-              personEmail = personData.data?.email?.[0]?.value || '';
+              personEmails = (personData.data?.email || [])
+                .map(e => (e?.value || '').trim().toLowerCase())
+                .filter(Boolean);
+              personEmail = personEmails[0] || '';
             }
           } catch (err) {
             console.error(`Failed to fetch person ${personId}:`, err);
@@ -158,6 +163,7 @@ app.get('/api/leads', async (req, res) => {
           label: labelName,
           label_ids: lead.label_ids || [],
           email: personEmail || '',
+          emails: personEmails,
           phone: '',
           createdAt: lead.add_time,
           updatedAt: lead.update_time,
@@ -261,6 +267,12 @@ app.post('/api/emails/decision', async (req, res) => {
       return res.status(500).json({ success: false, error: 'VITE_N8N_BASE_URL is not configured on the server' });
     }
     const n8nWebhookUrl = `${n8nBaseUrl}/email-approval`;
+
+    // Archive approved emails so we can recover the original body when
+    // a reply comes in (the queue gets cleared right after).
+    if (decision === 'approve' && email_data) {
+      await archiveSentEmail({ ...email_data, lead_id });
+    }
 
     // Remove email from queue
     if (email_data && email_data.id) {
