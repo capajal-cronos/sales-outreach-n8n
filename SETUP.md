@@ -56,9 +56,12 @@ curl-based smoke test.
 Skip this if your n8n runs on the same machine as the app, or if you're
 self-hosting both.
 
-If n8n is cloud-hosted, it can't reach `http://localhost:3001`. Cloudflare
-Tunnel gives your local API a permanent public URL, free. Full instructions
-in [N8N.md](./N8N.md) section 3.
+If n8n is cloud-hosted, it can't reach `http://localhost:3001`. You'll
+need to expose the local API somehow — Cloudflare Tunnel is the project
+default, but ngrok, Tailscale Funnel, or deploying the app to a cloud
+host all work. See
+[n8n/README.md → Exposing the local API to n8n](./n8n/README.md#exposing-the-local-api-to-n8n)
+for the full list.
 
 ## 5. Start the app
 

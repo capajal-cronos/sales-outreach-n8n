@@ -44,3 +44,6 @@ data/organizations.json
 !package.json
 !package-lock.json
 !data/responses.json
+
+# Local-only deployment notes
+deploy/

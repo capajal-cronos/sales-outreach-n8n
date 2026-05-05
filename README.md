@@ -37,11 +37,14 @@ It creates (and skips if already present):
 
 On success it writes the generated field keys into `.env` automatically
 (`VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY`, `VITE_PIPEDRIVE_PERSON_HEADLINE_KEY`,
-`VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY`) — existing values are replaced in place,
-other entries untouched. It also prints a `stageToLabelMap` block ready to
-paste into the n8n "Update Pipedrive Label" node (see [N8N.md](./N8N.md)).
+`VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY`, `VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY`)
+— existing values are replaced in place, other entries untouched. It also
+prints a `stageToLabelMap` block ready to paste into the n8n "Update
+Pipedrive Label" node (see [n8n/README.md](./n8n/README.md)).
 
-Cloudflare Tunnel is required if n8n runs in the cloud — see [N8N.md](./N8N.md).
+If n8n runs in the cloud it needs a public URL to reach your localhost.
+Cloudflare Tunnel is the project default (other options listed in
+[n8n/README.md → Exposing the local API to n8n](./n8n/README.md#exposing-the-local-api-to-n8n)).
 
 ## Run
 
@@ -68,28 +71,77 @@ Starts:
 ## Project Structure
 
 ```
+server.js              # Express API
+start-cloudflare.js    # Cloudflare Tunnel launcher
+scripts/
+└── setupPipedrive.js  # One-time Pipedrive field/label provisioning
 src/
-├── api/              # Express handlers + JSON storage
-├── components/       # React components (one per workflow step)
-└── main.jsx
-server.js             # API server
-start-cloudflare.js   # Tunnel launcher
-data/                 # JSON databases (auto-created)
+├── main.jsx           # React entry point
+├── App.jsx            # Root component, polling, cross-step state
+├── api/
+│   ├── serverDatabase.js       # JSON-on-disk stores + reply parsing
+│   └── organizationEndpoint.js # Apollo review handlers
+├── components/        # One component per workflow step (see below)
+└── config/
+    └── n8n.js         # Derives all 9 webhook URLs from VITE_N8N_BASE_URL
+data/                  # JSON "databases", auto-created on startup
+n8n/                   # Workflow exports + Code-node helpers (see n8n/README.md)
 ```
 
-## n8n Integration
+### What each file does
 
-See [N8N.md](./N8N.md) for streaming, approval webhook, and Cloudflare Tunnel setup.
+**Backend**
+
+| File | Responsibility |
+|------|----------------|
+| `server.js` | Express app. Mounts every `/api/*` route, polls Pipedrive for enriched leads in `/api/leads`, forwards approve/decline decisions to n8n's `email-approval` webhook, and keeps an in-memory ring of workflow errors. |
+| `start-cloudflare.js` | Spawns `cloudflared tunnel --url http://localhost:$PORT run $TUNNEL_NAME`, filters reconnect noise out of stderr, and shuts the child down on SIGINT/SIGTERM. |
+| `scripts/setupPipedrive.js` | Idempotently creates the four person fields, two organization fields, and five lead labels the workflow depends on. Writes the generated field keys back into `.env` and prints the `stageToLabelMap` for the n8n approval workflow. |
+| `src/api/serverDatabase.js` | Data-access layer for the four JSON stores in `data/` (email queue, Apollo pending, sent-mail archive, responses). Also owns the multi-language reply-parsing logic that strips Outlook/Gmail quoted threads and signatures from incoming replies before storage. |
+| `src/api/organizationEndpoint.js` | Request handlers for `/api/apollo/*` — validates the Apollo payload shapes n8n can send, then delegates to `serverDatabase.js`. |
+
+**Frontend**
+
+| File | Responsibility |
+|------|----------------|
+| `src/App.jsx` | Holds workflow state, mirrors it to `localStorage`, polls `/api/email-queue/pending`, `/api/responses`, and `/api/workflow-errors`, and unblocks per-lead "campaign pending" state when an error arrives or grace timeout expires. |
+| `src/config/n8n.js` | Reads `VITE_N8N_BASE_URL` and exposes the nine endpoint URLs as `N8N_ENDPOINTS`. Falls back to a deliberately-broken host so missing config produces an obvious error instead of silently hitting localhost. |
+| `src/components/WorkflowProgress.jsx` | Sidebar with the four-step progress nav and per-step counts. |
+| `src/components/OrganizationSearch.jsx` | Step 1. Three search modes (manual domain/name, filter-based, Excel upload), Apollo review queue, accept/decline → `/apollo-accepted-organizations`. |
+| `src/components/PeopleFinder.jsx` | Step 2. Lists Pipedrive persons + organizations with module-level caches that survive tab switches; calls `/find-people`, `/save-people`, `/make-leads`. |
+| `src/components/LeadManagement.jsx` | Step 3. Daily-cap and cooldown controls, prompt template, dispatches `/send-leads-mails`. |
+| `src/components/ResponseMonitor.jsx` | Step 4. Displays replies from `/api/responses`, fixes Windows-1252 mojibake, persists read/archived/status state in localStorage. |
+
+**Data files** (auto-created in `data/`)
+
+| File | Owner | Contents |
+|------|-------|----------|
+| `email_queue.json` | `serverDatabase.js` | Drafts queued by n8n, awaiting approval. Cleared on approve/decline. |
+| `apollo_pending.json` | `serverDatabase.js` | Apollo orgs awaiting accept/decline. Wiped on server start. |
+| `sent_emails.json` | `serverDatabase.js` | Persistent archive of approved emails — used to recover the original body when a reply arrives. |
+| `responses.json` | `serverDatabase.js` | Cleaned incoming replies (newest first). |
 
 ## Key API Endpoints
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/health` | Health check |
-| GET | `/api/organizations` | List organizations |
-| POST | `/api/organization/success` | n8n marks processed |
-| POST | `/api/organization/error` | n8n reports error |
-| POST | `/api/emails/stream-email` | n8n streams generated email |
-| GET | `/api/email-queue/pending` | Pending emails for review |
-| POST | `/api/emails/decision` | Approve/decline email |
-| GET | `/api/responses` | Incoming replies |
+| GET | `/api/leads` | Pipedrive leads (enriched with person email + label) |
+| POST | `/api/apollo/results` | n8n posts Apollo search results |
+| GET | `/api/apollo/pending` | List Apollo orgs awaiting review |
+| POST | `/api/apollo/decisions` | Accept/decline Apollo orgs |
+| POST | `/api/organization/success` | n8n marks org added to Pipedrive |
+| POST | `/api/organization/error` | n8n reports org failure |
+| POST | `/api/email-queue` | n8n queues a generated email for review |
+| GET | `/api/email-queue/pending` | Pending emails for the UI |
+| POST | `/api/emails/decision` | Approve/decline email (forwards to n8n `email-approval`) |
+| POST | `/api/responses` | n8n posts a detected reply |
+| GET | `/api/responses` | Replies for the UI |
+| POST | `/api/workflow-errors` | n8n reports a workflow failure |
+| GET | `/api/workflow-errors` | Errors for the UI banner |
+
+## n8n Integration
+
+n8n workflow exports, webhook contracts, streaming/approval wiring,
+Cloudflare Tunnel setup, and troubleshooting all live in
+[n8n/README.md](./n8n/README.md).
