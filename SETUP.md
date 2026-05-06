@@ -82,7 +82,7 @@ Walk through the four-stage workflow in the UI:
 | Problem | Fix |
 |---------|-----|
 | "VITE_N8N_BASE_URL is not set" warning in browser console | Fill it in `.env`, then restart `npm start` |
-| Pipedrive data doesn't load | Check `VITE_PIPEDRIVE_API_KEY` in `.env` |
+| Pipedrive data doesn't load | Check `PIPEDRIVE_API_KEY` in `.env` (server-side; was `VITE_PIPEDRIVE_API_KEY` before — old name still works as fallback) |
 | LinkedIn / headline columns empty | Re-run `npm run setup:pipedrive` — it auto-fills the field keys |
 | n8n webhook returns 404 | Workflow not activated, or base URL has a typo |
 | n8n can't reach localhost | Set up Cloudflare Tunnel (step 4) and put the tunnel URL in your n8n HTTP Request nodes |

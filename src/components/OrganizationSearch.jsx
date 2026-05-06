@@ -67,7 +67,6 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const N8N_FILTERS_WEBHOOK_URL = N8N_ENDPOINTS.organizationFilters;
   const N8N_FILE_WEBHOOK_URL = N8N_ENDPOINTS.organizationsFile;
   const N8N_APOLLO_ACCEPTED_URL = N8N_ENDPOINTS.apolloAcceptedOrganizations;
-  const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
   const ORG_APOLLO_ID_KEY = import.meta.env.VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY;
   const ORG_DESCRIPTION_KEY = import.meta.env.VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY;
 
@@ -99,7 +98,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   // Load pending Apollo organizations
   const loadApolloPendingOrgs = async (isPolling = false) => {
     try {
-      const response = await fetch('http://localhost:3001/api/apollo/pending');
+      const response = await fetch('/api/apollo/pending');
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
@@ -127,9 +126,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
   const fetchPipedriveOrganizations = async () => {
     try {
       // Fetch organizations with all fields
-      const response = await fetch(
-        `https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`
-      );
+      const response = await fetch('/api/pipedrive/organizations?limit=500');
 
       if (response.ok) {
         const data = await response.json();
@@ -139,9 +136,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
           const detailedOrgs = await Promise.all(
             data.data.map(async (org) => {
               try {
-                const detailResponse = await fetch(
-                  `https://api.pipedrive.com/v1/organizations/${org.id}?api_token=${PIPEDRIVE_API_KEY}`
-                );
+                const detailResponse = await fetch(`/api/pipedrive/organizations/${org.id}`);
                 if (detailResponse.ok) {
                   const detailData = await detailResponse.json();
                   if (detailData.success && detailData.data) {
@@ -553,7 +548,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         if (searchedDomain) {
           domainPollRef.current = setInterval(async () => {
             try {
-              const res = await fetch(`https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`);
+              const res = await fetch('/api/pipedrive/organizations?limit=500');
               if (!res.ok) return;
               const data = await res.json();
               if (!data.success || !data.data) return;
@@ -662,7 +657,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         action: selectedApolloOrgs.has(org.apollo_id) ? 'accept' : 'decline'
       }));
 
-      const response = await fetch('http://localhost:3001/api/apollo/decisions', {
+      const response = await fetch('/api/apollo/decisions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decisions })
@@ -698,7 +693,7 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
         action: 'decline'
       }));
 
-      const response = await fetch('http://localhost:3001/api/apollo/decisions', {
+      const response = await fetch('/api/apollo/decisions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decisions })

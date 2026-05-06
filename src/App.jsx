@@ -66,7 +66,7 @@ function App() {
       const pending = campaignPendingRef.current;
       if (Object.keys(pending).length === 0) return;
       try {
-        const res = await fetch('http://localhost:3001/api/email-queue/pending');
+        const res = await fetch('/api/email-queue/pending');
         if (!res.ok) return;
         const data = await res.json();
         const pendingEmails = data.emails || [];
@@ -110,7 +110,7 @@ function App() {
   useEffect(() => {
     const fetchErrors = async () => {
       try {
-        const res = await fetch('http://localhost:3001/api/workflow-errors');
+        const res = await fetch('/api/workflow-errors');
         if (!res.ok) return;
         const data = await res.json();
         setWorkflowErrors(data.errors || []);
@@ -118,7 +118,7 @@ function App() {
     };
     const fetchResponseCount = async () => {
       try {
-        const res = await fetch('http://localhost:3001/api/responses');
+        const res = await fetch('/api/responses');
         if (!res.ok) return;
         const data = await res.json();
         setResponseCount(data.count || 0);
@@ -148,7 +148,7 @@ function App() {
 
   const dismissError = async (id) => {
     try {
-      await fetch(`http://localhost:3001/api/workflow-errors/${id}`, { method: 'DELETE' });
+      await fetch(`/api/workflow-errors/${id}`, { method: 'DELETE' });
       setWorkflowErrors(prev => prev.filter(e => e.id !== id));
     } catch (_) {}
   };

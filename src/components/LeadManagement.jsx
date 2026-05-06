@@ -125,8 +125,6 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
   const [sentToday, setSentToday] = useState(loadSentToday);
   const hasFetchedRef = useRef(false);
 
-  const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
-
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
@@ -172,7 +170,7 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
 
   const fetchLabelMapping = async () => {
     try {
-      const res = await fetch(`https://api.pipedrive.com/v1/leadLabels?api_token=${PIPEDRIVE_API_KEY}`);
+      const res = await fetch('/api/pipedrive/lead-labels');
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data) {
@@ -188,7 +186,7 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
 
   const fetchLeads = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/leads?showAll=true');
+      const res = await fetch('/api/leads?showAll=true');
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.leads) {
@@ -215,7 +213,7 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
 
   const fetchPendingEmails = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/email-queue/pending');
+      const res = await fetch('/api/email-queue/pending');
       if (res.ok) {
         const data = await res.json();
         setPendingEmails(data.emails || []);
@@ -318,7 +316,7 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
     const email = pendingEmails.find(e => e.id === emailId);
     if (!email) return;
     try {
-      const res = await fetch('http://localhost:3001/api/emails/decision', {
+      const res = await fetch('/api/emails/decision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead_id: email.lead_id, decision: 'approve', email_data: email })
@@ -347,7 +345,7 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
     if (!editingEmail) return;
     const email = editingEmail;
     try {
-      const res = await fetch('http://localhost:3001/api/emails/decision', {
+      const res = await fetch('/api/emails/decision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -377,7 +375,7 @@ function LeadManagement({ workflowData, updateWorkflowData, campaignPendingLeads
     setEditingEmail(null);
     setPendingEmails(prev => prev.filter(e => e.id !== email.id));
     onCampaignDecided?.([email.lead_id]);
-    await fetch('http://localhost:3001/api/emails/decision', {
+    await fetch('/api/emails/decision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lead_id: email.lead_id, decision: 'decline', email_data: email })

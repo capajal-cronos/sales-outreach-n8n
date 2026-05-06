@@ -146,7 +146,7 @@ function ResponseMonitor() {
 
   const fetchResponses = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/responses');
+      const res = await fetch('/api/responses');
       if (res.ok) {
         const data = await res.json();
         if (data.success) {

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { N8N_ENDPOINTS } from '../config/n8n';
 import './PeopleFinder.css';
 
-const PIPEDRIVE_API_KEY = import.meta.env.VITE_PIPEDRIVE_API_KEY;
 const PERSON_LINKEDIN_KEY = import.meta.env.VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY;
 const PERSON_HEADLINE_KEY = import.meta.env.VITE_PIPEDRIVE_PERSON_HEADLINE_KEY;
 const ORG_APOLLO_ID_KEY   = import.meta.env.VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY;
@@ -26,7 +25,7 @@ async function fetchPersonDetail(person) {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
       const detailResponse = await fetch(
-        `https://api.pipedrive.com/api/v2/persons/${person.id}?api_token=${PIPEDRIVE_API_KEY}`,
+        `/api/pipedrive/persons/${person.id}`,
         { signal: controller.signal }
       );
       clearTimeout(timeoutId);
@@ -64,9 +63,7 @@ async function runPersonsFetch() {
   notifyStore(personsStore);
 
   try {
-    const response = await fetch(
-      `https://api.pipedrive.com/v1/persons?api_token=${PIPEDRIVE_API_KEY}&limit=100`
-    );
+    const response = await fetch('/api/pipedrive/persons?limit=100');
 
     if (response.ok) {
       const data = await response.json();
@@ -112,9 +109,7 @@ async function runOrgsFetch() {
   notifyStore(orgsStore);
 
   try {
-    const response = await fetch(
-      `https://api.pipedrive.com/v1/organizations?api_token=${PIPEDRIVE_API_KEY}&limit=500`
-    );
+    const response = await fetch('/api/pipedrive/organizations?limit=500');
 
     if (response.ok) {
       const data = await response.json();
@@ -122,9 +117,7 @@ async function runOrgsFetch() {
         const detailedOrgs = await Promise.all(
           data.data.map(async (org) => {
             try {
-              const detailResponse = await fetch(
-                `https://api.pipedrive.com/v1/organizations/${org.id}?api_token=${PIPEDRIVE_API_KEY}`
-              );
+              const detailResponse = await fetch(`/api/pipedrive/organizations/${org.id}`);
               if (detailResponse.ok) {
                 const detailData = await detailResponse.json();
                 if (detailData.success && detailData.data) {
@@ -224,7 +217,7 @@ function PeopleFinder({ workflowData, updateWorkflowData, workflowErrors = [], o
     ensurePersonsLoaded();
     ensureOrgsLoaded();
 
-    fetch(`https://api.pipedrive.com/v1/organizationFields?api_token=${PIPEDRIVE_API_KEY}`)
+    fetch('/api/pipedrive/organization-fields')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.success) return;

@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import {
@@ -19,6 +21,10 @@ import {
   archiveSentEmail
 } from './src/api/serverDatabase.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isProduction = process.env.NODE_ENV === 'production';
+const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY || process.env.VITE_PIPEDRIVE_API_KEY;
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -29,14 +35,51 @@ let errorIdCounter = 1;
 // Initialize Apollo pending database on startup
 await initializeApolloPending();
 
-// Middleware
-app.use(cors());
+// CORS: in production the frontend is same-origin (Express serves dist/), so
+// browser requests don't need CORS. n8n callbacks are server-to-server and
+// CORS doesn't apply. FRONTEND_ORIGIN allows overriding for split deployments.
+// In dev, default to the Vite dev server origin.
+const corsOrigin = process.env.FRONTEND_ORIGIN
+  || (isProduction ? false : 'http://localhost:3000');
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Organization API is running' });
 });
+
+// ============================================
+// PIPEDRIVE PROXY ENDPOINTS
+// ============================================
+// These keep the API key server-side. The browser hits /api/pipedrive/* and
+// the server adds the api_token. Responses are passed through unchanged so
+// existing client code can read `data.success`, `data.data`, etc.
+
+async function pipedriveProxy(req, res, pipedrivePath, extraQuery = {}) {
+  if (!PIPEDRIVE_API_KEY) {
+    return res.status(500).json({ success: false, error: 'PIPEDRIVE_API_KEY not configured on the server' });
+  }
+  try {
+    const params = new URLSearchParams({ api_token: PIPEDRIVE_API_KEY, ...extraQuery });
+    const limit = req.query.limit;
+    if (limit) params.set('limit', String(limit));
+    const url = `https://api.pipedrive.com${pipedrivePath}?${params.toString()}`;
+    const upstream = await fetch(url);
+    const text = await upstream.text();
+    res.status(upstream.status).type(upstream.headers.get('content-type') || 'application/json').send(text);
+  } catch (error) {
+    console.error(`Pipedrive proxy error (${pipedrivePath}):`, error);
+    res.status(502).json({ success: false, error: error.message });
+  }
+}
+
+app.get('/api/pipedrive/lead-labels', (req, res) => pipedriveProxy(req, res, '/v1/leadLabels'));
+app.get('/api/pipedrive/organizations', (req, res) => pipedriveProxy(req, res, '/v1/organizations'));
+app.get('/api/pipedrive/organizations/:id', (req, res) => pipedriveProxy(req, res, `/v1/organizations/${encodeURIComponent(req.params.id)}`));
+app.get('/api/pipedrive/persons', (req, res) => pipedriveProxy(req, res, '/v1/persons'));
+app.get('/api/pipedrive/persons/:id', (req, res) => pipedriveProxy(req, res, `/api/v2/persons/${encodeURIComponent(req.params.id)}`));
+app.get('/api/pipedrive/organization-fields', (req, res) => pipedriveProxy(req, res, '/v1/organizationFields'));
 
 // Apollo search results endpoint - receive organizations from Apollo search
 app.post('/api/apollo/results', async (req, res) => {
@@ -73,9 +116,6 @@ app.post('/api/organization/error', (req, res) => {
 // Get leads from Pipedrive
 app.get('/api/leads', async (req, res) => {
   try {
-    // Try both VITE_ prefixed and non-prefixed versions
-    const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY || process.env.VITE_PIPEDRIVE_API_KEY;
-    
     if (!PIPEDRIVE_API_KEY) {
       console.error('Pipedrive API key not found in environment variables');
       return res.status(500).json({
@@ -404,16 +444,15 @@ app.post('/api/responses', async (req, res) => {
     const payload = Array.isArray(req.body) ? req.body[0] : req.body;
 
     // If stage missing or 'unknown', try looking up the lead's label from Pipedrive
-    const pipedriveKey = process.env.PIPEDRIVE_API_KEY || process.env.VITE_PIPEDRIVE_API_KEY;
-    if ((!payload.stage || payload.stage === 'unknown') && payload.lead_id && pipedriveKey) {
+    if ((!payload.stage || payload.stage === 'unknown') && payload.lead_id && PIPEDRIVE_API_KEY) {
       try {
-        const labelsRes = await fetch(`https://api.pipedrive.com/v1/leadLabels?api_token=${pipedriveKey}`);
+        const labelsRes = await fetch(`https://api.pipedrive.com/v1/leadLabels?api_token=${PIPEDRIVE_API_KEY}`);
         const labelsData = await labelsRes.json();
         const labelMap = {};
         if (labelsData.success && labelsData.data) {
           labelsData.data.forEach(l => { labelMap[l.id] = l.name.toLowerCase(); });
         }
-        const leadRes = await fetch(`https://api.pipedrive.com/v1/leads/${payload.lead_id}?api_token=${pipedriveKey}`);
+        const leadRes = await fetch(`https://api.pipedrive.com/v1/leads/${payload.lead_id}?api_token=${PIPEDRIVE_API_KEY}`);
         const leadData = await leadRes.json();
         if (leadData.success && leadData.data) {
           const labelId = leadData.data.label_ids?.[0];
@@ -486,6 +525,14 @@ app.delete('/api/workflow-errors/:id', (req, res) => {
   workflowErrors.splice(idx, 1);
   res.json({ success: true });
 });
+
+// In production, serve the built frontend from this same Express process so
+// browser and API are same-origin (no CORS, no API base URL config needed).
+if (isProduction) {
+  const distDir = path.join(__dirname, 'dist');
+  app.use(express.static(distDir));
+  app.get('*', (req, res) => res.sendFile(path.join(distDir, 'index.html')));
+}
 
 // Start server
 app.listen(PORT, () => {

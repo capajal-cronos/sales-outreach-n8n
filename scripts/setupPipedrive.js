@@ -3,7 +3,7 @@
 // Safe to re-run — existing items (matched by name) are skipped.
 //
 // Usage:
-//   npm run setup:pipedrive                 # reads VITE_PIPEDRIVE_API_KEY from .env
+//   npm run setup:pipedrive                 # reads PIPEDRIVE_API_KEY from .env
 //   node scripts/setupPipedrive.js <token>  # or pass the API token as an arg
 
 import 'dotenv/config';
@@ -12,11 +12,11 @@ import { resolve } from 'node:path';
 
 const API_BASE = 'https://api.pipedrive.com/v1';
 const ENV_PATH = resolve(process.cwd(), '.env');
-const API_TOKEN = process.argv[2] || process.env.VITE_PIPEDRIVE_API_KEY;
+const API_TOKEN = process.argv[2] || process.env.PIPEDRIVE_API_KEY || process.env.VITE_PIPEDRIVE_API_KEY;
 
 if (!API_TOKEN) {
   console.error('ERROR: Pipedrive API token not found.');
-  console.error('  Set VITE_PIPEDRIVE_API_KEY in .env, or pass it as the first CLI arg.');
+  console.error('  Set PIPEDRIVE_API_KEY in .env, or pass it as the first CLI arg.');
   process.exit(1);
 }
 
