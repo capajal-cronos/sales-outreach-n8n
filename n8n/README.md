@@ -26,9 +26,29 @@ care as long as the webhook paths match.
 
 ## What's in this folder
 
-Only this README for now. Workflow exports (`.json`) and any
-extracted Code-node bodies (`.js`) will be added here as they're
-finalized — see the export convention below.
+Eleven workflow exports — nine are triggered by the frontend via webhooks,
+one runs on incoming email, and one is a sub-workflow called by another.
+
+### Frontend-triggered (webhook)
+
+| File | Webhook | Purpose |
+|------|---------|---------|
+| `frontend manual search.json` | `POST /organizations` | OrganizationSearch — manual domain/name lookup. Tries Apollo by domain first, falls back to name search; pushes results to the frontend and saves them to the local DB. |
+| `add organizations filter.json` | `POST /organization-filters` | OrganizationSearch — filter-based Apollo search (industry, size, location). Returns a candidate list to the frontend for the user to approve. |
+| `add organizations file.json` | `POST /organizations-file` | OrganizationSearch — bulk Excel upload. Loops the rows, checks Pipedrive for existing orgs, enriches via Apollo, creates the new ones, saves to the local DB. |
+| `accepted-apollo-orgs.json` | `POST /apollo-accepted-organizations` | OrganizationSearch — once the user approves Apollo results, enriches each org, creates it in Pipedrive, and saves it locally. |
+| `find people in pipedrive.json` | `POST /find-people` | PeopleFinder — finds persons attached to a given organization, enriches them with Apollo, and returns the merged list to the frontend. |
+| `save people in pipedrive.json` | `POST /save-people` | PeopleFinder — saves the persons the user selected to Pipedrive (skipping ones without an email) and creates a draft lead for each. |
+| `make leads from people.json` | `POST /make-leads` | PeopleFinder — converts saved persons into Pipedrive leads, deduplicating against leads that already exist. |
+| `mailing system.json` | `POST /send-leads-mails` | LeadManagement — kicks off a campaign. Fetches the selected leads, resolves their persons + organizations, derives the next email stage, and hands off to the parallel mail generation sub-workflow. |
+| `approved mails.json` | `POST /email-approval` | ResponseMonitor — receives the user's approve/decline decision, sends the email if approved, and updates the lead's Pipedrive stage label (`first_mail` → `last_mail`). |
+
+### Other triggers
+
+| File | Trigger | Purpose |
+|------|---------|---------|
+| `response monitor - imap.json` | IMAP `Email Trigger` | Watches the inbox. When a reply comes in (`In-Reply-To` header present), matches the sender to a Pipedrive lead, posts the reply to `/api/responses` for the UI, and flips the lead label to "answered". |
+| `parallel mail generation.json` | `Execute Workflow` (sub-workflow) | Called by `mailing system`. Runs an OpenRouter LLM agent per lead to draft the email, then POSTs it to `/api/email-queue` for review in the frontend. |
 
 ## Export (developer side)
 

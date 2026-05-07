@@ -1,5 +1,35 @@
 [
   {
+    "id": "1778158196559w6a54j85w",
+    "from": "capajal@cronos.be",
+    "subject": "Re: test mail",
+    "date": "Thu, 7 May 2026 12:49:17 +0000",
+    "body": "hey",
+    "snippet": "hey",
+    "person_id": 3,
+    "person_name": "Alban Capaj",
+    "lead_id": "f2580ec0-4a12-11f1-8c11-0f4917d25bac",
+    "lead_title": "Alban Capaj lead",
+    "stage": "first_mail",
+    "original": "hey",
+    "received_at": "2026-05-07T12:49:56.559Z"
+  },
+  {
+    "id": "1778138956678ltfmjtqmf",
+    "from": "capajal@cronos.be",
+    "subject": "Re: hellow",
+    "date": "Thu, 7 May 2026 07:27:30 +0000",
+    "body": "hoi",
+    "snippet": "hoi",
+    "person_id": 3,
+    "person_name": "Alban Capaj",
+    "lead_id": "16448110-49e6-11f1-8495-397cba49a7b8",
+    "lead_title": "Alban Capaj lead",
+    "stage": "first_mail",
+    "original": "hey\n\nCould a short chat be useful to explore a fit for your next growth phase?",
+    "received_at": "2026-05-07T07:29:16.678Z"
+  },
+  {
     "id": "1777899851835mabg61ae4",
     "from": "capajal@cronos.be",
     "subject": "Re: Quick check‑in",

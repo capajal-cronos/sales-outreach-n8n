@@ -182,7 +182,6 @@ function ResponseMonitor() {
           {isUnread && !isArchiveList && <span className="unread-dot" />}
           {senderName}
         </td>
-        <td className="reply-lead">{response.lead_title || '—'}</td>
         <td className="reply-preview">{snippet.substring(0, 100) || '(no text)'}</td>
         <td className="reply-date" title={new Date(dateStr).toLocaleString()}>{formatTimeAgo(dateStr)}</td>
         <td className="reply-status-cell" onClick={e => e.stopPropagation()}>
@@ -263,7 +262,6 @@ function ResponseMonitor() {
             <thead>
               <tr>
                 <th className="th-sortable" onClick={() => toggleSort('sender')}>Sender{sortIcon('sender')}</th>
-                <th>Lead</th>
                 <th>Reply</th>
                 <th className="th-sortable" onClick={() => toggleSort('received')}>Received{sortIcon('received')}</th>
                 <th className="th-sortable" onClick={() => toggleSort('status')}>Status{sortIcon('status')}</th>
@@ -309,7 +307,6 @@ function ResponseMonitor() {
               <thead>
                 <tr>
                   <th>Sender</th>
-                  <th>Lead</th>
                   <th>Reply</th>
                   <th>Received</th>
                   <th>Status</th>
