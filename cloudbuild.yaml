@@ -1,0 +1,41 @@
+# Cloud Build configuration for LeadFlow Pro.
+#
+# Builds the container with the right VITE_* build args so the frontend
+# bundle has the correct n8n URL and Pipedrive field keys baked in.
+#
+# Usage:
+#   gcloud builds submit --config=cloudbuild.yaml \
+#     --substitutions=_REPO=leadflow,_REGION=europe-west1,\
+# _N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook,\
+# _PIPEDRIVE_PERSON_LINKEDIN_KEY=...,_PIPEDRIVE_PERSON_HEADLINE_KEY=...,\
+# _PIPEDRIVE_ORG_APOLLO_ID_KEY=...,_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY=...
+
+substitutions:
+  _REGION: europe-west1
+  _REPO: leadflow
+  _IMAGE: app
+  _N8N_BASE_URL: ''
+  _PIPEDRIVE_PERSON_LINKEDIN_KEY: ''
+  _PIPEDRIVE_PERSON_HEADLINE_KEY: ''
+  _PIPEDRIVE_ORG_APOLLO_ID_KEY: ''
+  _PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY: ''
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:${SHORT_SHA}
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:latest
+      - --build-arg=VITE_N8N_BASE_URL=${_N8N_BASE_URL}
+      - --build-arg=VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY=${_PIPEDRIVE_PERSON_LINKEDIN_KEY}
+      - --build-arg=VITE_PIPEDRIVE_PERSON_HEADLINE_KEY=${_PIPEDRIVE_PERSON_HEADLINE_KEY}
+      - --build-arg=VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY=${_PIPEDRIVE_ORG_APOLLO_ID_KEY}
+      - --build-arg=VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY=${_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY}
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:${SHORT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

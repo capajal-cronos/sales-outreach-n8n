@@ -126,13 +126,16 @@ export async function clearApolloPending() {
   return true;
 }
 
-// Server-startup hook. Wipes the pending table — matches legacy JSON behaviour
-// (apollo_pending was always reset on boot). Safe in single-instance setups
-// only; remove this call before scaling Cloud Run beyond one instance.
+// Server-startup hook. Verifies storage is reachable, and wipes the pending
+// table only when the JSON driver is active — that preserves legacy local
+// behaviour ("fresh slate every npm start") without clobbering shared state
+// every time a Cloud Run instance cold-starts.
 export async function initializeApolloPending() {
   try {
     await db.init();
-    await db.apolloPending.clear();
+    if (db.DB_DRIVER === 'json') {
+      await db.apolloPending.clear();
+    }
   } catch (error) {
     console.error('Failed to initialize Apollo pending database:', error);
   }
