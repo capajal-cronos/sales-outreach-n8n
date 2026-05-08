@@ -1,0 +1,33 @@
+# Local development Postgres for LeadFlow Pro.
+#
+#   docker compose up -d postgres   # start
+#   docker compose down             # stop (data persists)
+#   docker compose down -v          # nuke the volume (destroys all data)
+#
+# init.sql is mounted into /docker-entrypoint-initdb.d/ so it runs
+# automatically on first volume creation. Re-runs need `npm run db:migrate`
+# (the script is idempotent).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: leadflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-leadflow}
+      POSTGRES_USER: ${POSTGRES_USER:-leadflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leadflow_dev_password}
+    ports:
+      # Bound to localhost only — never exposed externally.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - leadflow_postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leadflow} -d ${POSTGRES_DB:-leadflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  leadflow_postgres_data:

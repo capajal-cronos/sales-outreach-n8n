@@ -121,8 +121,14 @@ async function runOrgsFetch() {
               if (detailResponse.ok) {
                 const detailData = await detailResponse.json();
                 if (detailData.success && detailData.data) {
-                  const apolloId = ORG_APOLLO_ID_KEY ? detailData.data[ORG_APOLLO_ID_KEY] : undefined;
-                  return { ...detailData.data, apollo_id: apolloId };
+                  // Pipedrive returns custom fields either as a nested
+                  // `custom_fields` object (newer shape) or as top-level
+                  // hash-keyed properties (legacy shape). Check both.
+                  const orgData = detailData.data;
+                  const apolloId = ORG_APOLLO_ID_KEY
+                    ? (orgData?.custom_fields?.[ORG_APOLLO_ID_KEY] ?? orgData[ORG_APOLLO_ID_KEY])
+                    : undefined;
+                  return { ...orgData, apollo_id: apolloId };
                 }
                 return detailData.success && detailData.data ? detailData.data : org;
               }

@@ -140,8 +140,14 @@ function OrganizationSearch({ workflowData, updateWorkflowData, onNext, workflow
                 if (detailResponse.ok) {
                   const detailData = await detailResponse.json();
                   if (detailData.success && detailData.data) {
-                    const apolloId = ORG_APOLLO_ID_KEY ? detailData.data[ORG_APOLLO_ID_KEY] : undefined;
-                    return { ...detailData.data, apollo_id: apolloId };
+                    // Pipedrive may return custom fields as a nested
+                    // `custom_fields` object or as top-level hash-keyed
+                    // properties depending on account / API version.
+                    const orgData = detailData.data;
+                    const apolloId = ORG_APOLLO_ID_KEY
+                      ? (orgData?.custom_fields?.[ORG_APOLLO_ID_KEY] ?? orgData[ORG_APOLLO_ID_KEY])
+                      : undefined;
+                    return { ...orgData, apollo_id: apolloId };
                   }
                 }
               } catch (err) {

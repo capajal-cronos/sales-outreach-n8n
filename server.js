@@ -20,6 +20,7 @@ import {
   getAllResponses,
   archiveSentEmail
 } from './src/api/serverDatabase.js';
+import { DB_DRIVER, ping as dbPing, close as dbClose } from './src/api/db/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isProduction = process.env.NODE_ENV === 'production';
@@ -44,9 +45,21 @@ const corsOrigin = process.env.FRONTEND_ORIGIN
 app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Organization API is running' });
+// Health check endpoint. Pings the DB when the postgres driver is active so
+// orchestrators (Cloud Run, etc.) can fail-fast on a broken connection.
+app.get('/health', async (req, res) => {
+  if (DB_DRIVER === 'postgres') {
+    try {
+      await dbPing();
+    } catch (error) {
+      return res.status(503).json({
+        status: 'degraded',
+        driver: DB_DRIVER,
+        error: error.message
+      });
+    }
+  }
+  res.json({ status: 'ok', driver: DB_DRIVER, message: 'Organization API is running' });
 });
 
 // ============================================
@@ -535,6 +548,24 @@ if (isProduction) {
 }
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`API ready on http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  console.log(`API ready on http://localhost:${PORT} (db driver: ${DB_DRIVER})`);
 });
+
+// Graceful shutdown: stop accepting new connections, drain the DB pool, exit.
+async function shutdown(signal) {
+  console.log(`Received ${signal}, shutting down...`);
+  server.close(async () => {
+    try {
+      await dbClose();
+    } catch (error) {
+      console.error('Error closing DB pool:', error);
+    }
+    process.exit(0);
+  });
+  // Hard-exit after 10s if the close hangs (e.g. lingering keep-alive sockets).
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

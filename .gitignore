@@ -47,3 +47,8 @@ data/organizations.json
 
 # Local-only deployment notes
 deploy/
+
+# Postgres data lives in the named docker volume, but a dump/backup folder
+# may end up here during local debugging. Keep schema (db/init.sql) tracked.
+db/backup/
+*.sql.gz

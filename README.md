@@ -66,7 +66,34 @@ Starts:
 | `npm run server` | API only |
 | `npm run tunnel` | Tunnel only |
 | `npm run setup:pipedrive` | Create Pipedrive custom fields + lead labels |
+| `npm run db:up` | Start the local Postgres container |
+| `npm run db:down` | Stop the local Postgres container (data persists) |
+| `npm run db:reset` | Nuke the Postgres volume and restart fresh |
+| `npm run db:migrate` | Apply `db/init.sql` to the configured `DATABASE_URL` |
 | `npm run build` | Production build |
+
+## Storage
+
+State lives in one of two backends, picked via `DB_DRIVER`:
+
+- **`json` (default)** — the four `data/*.json` files. Single-process only,
+  fine for local development.
+- **`postgres`** — a real database via the `pg` library. Required for any
+  multi-instance hosting (Cloud Run, etc.).
+
+To run locally on Postgres:
+
+```bash
+docker compose up -d postgres            # boot the container
+# .env:
+#   DB_DRIVER=postgres
+#   DATABASE_URL=postgres://leadflow:leadflow_dev_password@127.0.0.1:5432/leadflow
+npm start
+```
+
+Schema lives in [`db/init.sql`](./db/init.sql). It runs automatically the
+first time the Docker volume is created; for any other target run
+`npm run db:migrate`.
 
 ## Project Structure
 
