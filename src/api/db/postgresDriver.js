@@ -69,7 +69,6 @@ function mapResponseRow(row) {
     person_name: row.person_name,
     lead_id:     row.lead_id,
     lead_title:  row.lead_title,
-    stage:       row.stage,
     original:    row.original,
     received_at: row.received_at instanceof Date ? row.received_at.toISOString() : row.received_at
   };
@@ -266,6 +265,19 @@ export const sentEmails = {
       [leadId]
     );
     return result.rows[0] ? mapSentEmailRow(result.rows[0]) : null;
+  },
+
+  async findLatestForEmail(email) {
+    if (!email) return null;
+    const result = await pool.query(
+      `SELECT lead_id, email, subject, body, email_stage, sent_at
+         FROM sent_emails
+         WHERE lower(email) = lower($1)
+         ORDER BY sent_at DESC
+         LIMIT 1`,
+      [email.trim()]
+    );
+    return result.rows[0] ? mapSentEmailRow(result.rows[0]) : null;
   }
 };
 
@@ -277,8 +289,8 @@ export const responses = {
     await pool.query(
       `INSERT INTO responses
          (id, from_address, subject, email_date, body, snippet,
-          person_id, person_name, lead_id, lead_title, stage, original, received_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          person_id, person_name, lead_id, lead_title, original, received_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         response.id,
         response.from || '',
@@ -290,7 +302,6 @@ export const responses = {
         response.person_name || '',
         response.lead_id || null,
         response.lead_title || '',
-        response.stage || '',
         response.original || '',
         response.received_at
       ]

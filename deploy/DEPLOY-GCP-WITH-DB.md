@@ -314,6 +314,41 @@ If you change `db/init.sql`, re-apply via the Auth Proxy (step 4 again).
 
 ---
 
+## Pushing changes from Cloud Shell
+
+When you need to commit and push directly from Cloud Shell (e.g. after
+running `npm install` to sync the lockfile inside the Cloud Build flow):
+
+```bash
+# Identity (one-time, persists across Cloud Shell sessions)
+git config --global user.email "you@example.com"
+git config --global user.name "Your GitHub Username"
+
+# GitHub authentication — gh CLI is preinstalled in Cloud Shell.
+# Pick: GitHub.com → HTTPS → Yes (auth git too) → Login with a web browser.
+gh auth login
+```
+
+After that `git push` from Cloud Shell works without prompting for credentials.
+
+---
+
+## Troubleshooting
+
+| Error / symptom | Cause | Fix |
+|-----------------|-------|-----|
+| `npm error code EUSAGE … npm ci can only install packages when your package.json and package-lock.json are in sync` during Cloud Build | Lockfile drift | `npm install` to regenerate, then commit + push `package-lock.json`, then re-run `gcloud builds submit` |
+| `does not have storage.objects.get access` during `gcloud builds submit` | Compute SA missing Cloud Build IAM (post-April-2024 GCP projects) | Run `bash deploy/grant-cloudbuild-iam.sh` once per project |
+| `invalid image name "…/app:": could not parse reference` | `${SHORT_SHA}` is empty for manual `gcloud builds submit` | Pass `_SHA=$(git rev-parse --short HEAD)` in `--substitutions` (the `cloudbuild.yaml` defaults `_SHA` to `manual` if omitted) |
+| Cloud Run revision creation fails with `Image 'mirror.gcr.io/…' not found` | Wrong image URL pasted | Use the full Artifact Registry URL: `${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/app:latest` |
+| `Failed to approve email: N8N_BASE_URL is not configured on the server` | Missing runtime env var on Cloud Run | Add `N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook` to `--set-env-vars` or via the UI |
+| `Failed to approve email: VITE_N8N_BASE_URL is not configured on the server` | Old image running before the n8n proxy refactor | Rebuild and redeploy with the latest commit |
+| Cloud Shell `git pull` aborts on local changes | Edits made in Cloud Shell that aren't committed | `git checkout <file>` to discard, or `git stash` to save; then `git pull` |
+| `Author identity unknown` on `git commit` in Cloud Shell | git config not set | See "Pushing changes from Cloud Shell" above |
+| `Username for github.com:` prompt | GitHub no longer accepts passwords | Run `gh auth login` |
+
+---
+
 ## Rollback
 
 Cloud Run keeps revisions automatically:

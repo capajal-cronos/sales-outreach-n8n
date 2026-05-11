@@ -193,18 +193,40 @@ export async function archiveSentEmail(email) {
   }
 }
 
-// Look up the body of the most recently sent email for a lead. Reads the
-// persistent archive first, falls back to the live queue for in-flight emails.
-async function findSentBodyForLead(leadId) {
-  if (!leadId) return '';
+// Look up the body of the most recently sent email for a reply.
+//   1. By lead_id (best when Pipedrive keeps the same lead through the thread)
+//   2. By recipient email (handles cases where the reply is associated with a
+//      newly-created lead, so its lead_id no longer matches the sent one)
+//   3. From the live queue, in case the email is still in-flight
+async function findSentBodyForReply({ leadId, email }) {
   try {
-    const archived = await db.sentEmails.findLatestForLead(leadId);
-    if (archived?.body) return archived.body.trim();
-    const queued = await db.emailQueue.findLatestForLead(leadId);
-    return (queued?.body || '').trim();
+    if (leadId) {
+      const archived = await db.sentEmails.findLatestForLead(leadId);
+      if (archived?.body) return archived.body.trim();
+    }
+    if (email) {
+      const archived = await db.sentEmails.findLatestForEmail(email);
+      if (archived?.body) return archived.body.trim();
+    }
+    if (leadId) {
+      const queued = await db.emailQueue.findLatestForLead(leadId);
+      if (queued?.body) return queued.body.trim();
+    }
+    return '';
   } catch {
     return '';
   }
+}
+
+// n8n IMAP delivers `from` as either a string ("Name <addr@host>") or an
+// object ({ address, name, text }). Extract just the bare address.
+function extractEmailAddress(from) {
+  if (!from) return '';
+  if (typeof from === 'object') {
+    return (from.address || '').toLowerCase().trim();
+  }
+  const match = String(from).match(/<([^>]+)>/);
+  return (match ? match[1] : String(from)).toLowerCase().trim();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,11 +255,16 @@ export async function addResponse(responseData) {
 
   // Recover the original email. Priority:
   // 1. What n8n explicitly sent.
-  // 2. The body of the email we sent for this lead (looked up in the archive).
+  // 2. The body of the email we sent (looked up by lead_id, then by recipient
+  //    address — the latter catches replies that Pipedrive reassigned to a
+  //    new lead and so no longer share a lead_id with the sent_emails row).
   // 3. Whatever survives after stripping the Outlook header from the quoted block.
   let original = (responseData.original || '').trim();
-  if (!original && responseData.lead_id) {
-    original = (await findSentBodyForLead(responseData.lead_id)) || '';
+  if (!original) {
+    original = (await findSentBodyForReply({
+      leadId: responseData.lead_id,
+      email: extractEmailAddress(fromRaw)
+    })) || '';
   }
   if (!original) {
     original = extractOriginalFromQuoted(quoted);
@@ -256,7 +283,6 @@ export async function addResponse(responseData) {
     person_name: responseData.person_name || '',
     lead_id:     responseData.lead_id || null,
     lead_title:  responseData.lead_title || '',
-    stage:       responseData.stage || '',
     original,
     received_at: new Date().toISOString()
   };

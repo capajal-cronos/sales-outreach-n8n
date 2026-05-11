@@ -200,6 +200,16 @@ export const sentEmails = {
       .filter(e => e.lead_id === leadId)
       .sort((a, b) => new Date(b.sent_at || 0) - new Date(a.sent_at || 0));
     return matches[0] || null;
+  },
+
+  async findLatestForEmail(email) {
+    if (!email) return null;
+    const target = email.toLowerCase().trim();
+    const archive = await readJsonArray(SENT_EMAILS_FILE);
+    const matches = archive
+      .filter(e => (e.email || '').toLowerCase().trim() === target)
+      .sort((a, b) => new Date(b.sent_at || 0) - new Date(a.sent_at || 0));
+    return matches[0] || null;
   }
 };
 

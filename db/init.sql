@@ -79,12 +79,14 @@ CREATE TABLE IF NOT EXISTS responses (
     person_name  TEXT        NOT NULL DEFAULT '',
     lead_id      TEXT,
     lead_title   TEXT        NOT NULL DEFAULT '',
-    stage        TEXT        NOT NULL DEFAULT '',
     original     TEXT        NOT NULL DEFAULT '',
     received_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_responses_received_at ON responses (received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_responses_lead_id     ON responses (lead_id);
+
+-- Drop the legacy `stage` column on existing databases (idempotent).
+ALTER TABLE responses DROP COLUMN IF EXISTS stage;
 
 COMMIT;

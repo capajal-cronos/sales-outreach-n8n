@@ -448,6 +448,43 @@ traffic** → set 100% to that revision → **Save**. Live in seconds.
 
 ---
 
+## Pushing changes from Cloud Shell
+
+Sometimes you'll need to commit and push directly from Cloud Shell (e.g.
+after running `npm install` to sync the lockfile). First-time setup:
+
+```bash
+# Identity (one-time, persists across Cloud Shell sessions)
+git config --global user.email "you@example.com"
+git config --global user.name "Your GitHub Username"
+
+# GitHub authentication — gh CLI is preinstalled in Cloud Shell.
+# Pick: GitHub.com → HTTPS → Yes (auth git too) → Login with a web browser.
+# A one-time code is shown; open the URL it prints, paste the code, Authorize.
+gh auth login
+```
+
+After that, `git push` from Cloud Shell works without prompting for
+credentials.
+
+---
+
+## Troubleshooting
+
+| Error / symptom | Cause | Fix |
+|-----------------|-------|-----|
+| `npm error code EUSAGE … npm ci can only install packages when your package.json and package-lock.json are in sync` (during Cloud Build) | Lockfile drift between `package.json` and `package-lock.json` | In Cloud Shell: `npm install` to regenerate the lockfile, then `git add package-lock.json && git commit -m "fix: sync package-lock.json" && git push`, then re-run `bash deploy/build.sh` |
+| `does not have storage.objects.get access` during `gcloud builds submit` | Compute SA missing Cloud Build / Storage / Artifact Registry / Logging roles (post-April-2024 GCP projects) | Run `bash deploy/grant-cloudbuild-iam.sh` once per project |
+| `invalid image name "…/app:": could not parse reference` | `${SHORT_SHA}` is empty because `gcloud builds submit` doesn't auto-populate it (only git-triggered Cloud Build does) | `cloudbuild.yaml` now uses `_SHA` (defaults to `manual`). Pass `_SHA=$(git rev-parse --short HEAD)` in `--substitutions` for proper commit tags |
+| Cloud Run revision creation fails with `Image 'mirror.gcr.io/leadflow/app:latest' not found` | The image picker autocompleted to Docker Hub mirror instead of Artifact Registry | Paste the full URL: `europe-west1-docker.pkg.dev/<PROJECT_ID>/leadflow/app:latest` |
+| `Failed to approve email: N8N_BASE_URL is not configured on the server` | The Cloud Run service is missing the `N8N_BASE_URL` runtime env var | Cloud Run → service → Edit & deploy new revision → Variables & Secrets → add `N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook` → Deploy |
+| `Failed to approve email: VITE_N8N_BASE_URL is not configured on the server` | Running an old image from before the n8n proxy refactor | Rebuild and redeploy: `git pull && bash deploy/build.sh` in Cloud Shell, then Cloud Run → Edit & deploy new revision → Deploy (picks up new `:latest`) |
+| Cloud Shell `git pull` aborts with `Your local changes to … would be overwritten by merge` | Local edits to a tracked file (e.g. the `sed`-patched `cloudbuild.yaml`) | `git checkout <file>` to discard, or `git stash` to keep; then `git pull` |
+| `Author identity unknown` when committing in Cloud Shell | First time using git in this shell | `git config --global user.email "you@…" && git config --global user.name "…"` |
+| `Username for github.com:` prompt on `git push` | GitHub no longer accepts passwords | Run `gh auth login` (see "Pushing changes from Cloud Shell" above) |
+
+---
+
 ## What this UI route does NOT cover
 
 The CLI runbook ([DEPLOY-GCP-WITH-DB.md](./DEPLOY-GCP-WITH-DB.md)) has
