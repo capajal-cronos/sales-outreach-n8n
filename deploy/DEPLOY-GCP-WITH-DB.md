@@ -130,25 +130,48 @@ gcloud artifacts repositories create "$REPO" \
 
 ## 6. Build & push the image
 
+GCP projects created after April 2024 use the Compute Engine default
+service account for Cloud Build, and it isn't auto-granted the storage,
+logging, Artifact Registry, and Cloud Build roles. Run this once per
+project before the first build:
+
+```bash
+P=$(gcloud config get-value project)
+N=$(gcloud projects describe "$P" --format='value(projectNumber)')
+SA="${N}-compute@developer.gserviceaccount.com"
+
+for R in storage.admin logging.logWriter artifactregistry.writer cloudbuild.builds.builder; do
+  gcloud projects add-iam-policy-binding "$P" \
+    --member="serviceAccount:$SA" \
+    --role="roles/$R" \
+    --condition=None \
+    --quiet >/dev/null
+  echo "Granted roles/$R"
+done
+```
+
+Then submit the build:
+
 ```bash
 gcloud builds submit \
   --config=cloudbuild.yaml \
   --substitutions="\
 _REGION=$REGION,\
 _REPO=$REPO,\
-_N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook,\
+_SHA=$(git rev-parse --short HEAD),\
 _PIPEDRIVE_PERSON_LINKEDIN_KEY=$(grep ^VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY .env | cut -d= -f2),\
 _PIPEDRIVE_PERSON_HEADLINE_KEY=$(grep ^VITE_PIPEDRIVE_PERSON_HEADLINE_KEY .env | cut -d= -f2),\
 _PIPEDRIVE_ORG_APOLLO_ID_KEY=$(grep ^VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY .env | cut -d= -f2),\
 _PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY=$(grep ^VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY .env | cut -d= -f2)"
 ```
 
-The `VITE_*` field-key values are pulled straight from your local `.env`.
-Replace `_N8N_BASE_URL` with the n8n webhook URL you actually use in prod.
+The `VITE_PIPEDRIVE_*` field-key values are pulled straight from your local
+`.env`. The n8n URL is NOT a build arg — it's a runtime env var on Cloud
+Run (see step 9), so changing n8n environments doesn't require a rebuild.
 
 > Only `VITE_*` values get baked into the *frontend* bundle here. Server-
-> side secrets (`PIPEDRIVE_API_KEY`, `DATABASE_URL`) are wired in at
-> deploy time via Secret Manager — see step 8.
+> side config (`PIPEDRIVE_API_KEY`, `DATABASE_URL`, `N8N_BASE_URL`) are
+> wired in at deploy time — see steps 8 and 9.
 
 ---
 
@@ -205,7 +228,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --max-instances=3 \
   --concurrency=80 \
   --timeout=60 \
-  --set-env-vars="NODE_ENV=production,DB_DRIVER=postgres" \
+  --set-env-vars="NODE_ENV=production,DB_DRIVER=postgres,N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook" \
   --update-secrets="DATABASE_URL=database-url:latest,PIPEDRIVE_API_KEY=pipedrive-api-key:latest"
 ```
 
@@ -280,7 +303,7 @@ To roll out a new version of the app:
 
 ```bash
 gcloud builds submit --config=cloudbuild.yaml \
-  --substitutions="_REGION=$REGION,_REPO=$REPO,_N8N_BASE_URL=...,..."
+  --substitutions="_REGION=$REGION,_REPO=$REPO,_SHA=$(git rev-parse --short HEAD),..."
 
 gcloud run services update "$SERVICE_NAME" \
   --image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/app:latest" \

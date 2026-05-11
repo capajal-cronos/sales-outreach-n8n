@@ -186,27 +186,55 @@ repository**.
 
 ## 6. Build & push the image (Cloud Shell)
 
-Still in your Cloud Shell session in the cloned repo:
+Still in your Cloud Shell session in the cloned repo.
+
+### 6a. Grant Cloud Build the IAM roles it needs (once per project)
+
+GCP projects created after April 2024 use the Compute Engine default
+service account for Cloud Build, and it isn't auto-granted the storage,
+logging, Artifact Registry, and Cloud Build roles. Paste this block in
+Cloud Shell to grant all four at once:
+
+```bash
+P=$(gcloud config get-value project)
+N=$(gcloud projects describe "$P" --format='value(projectNumber)')
+SA="${N}-compute@developer.gserviceaccount.com"
+
+for R in storage.admin logging.logWriter artifactregistry.writer cloudbuild.builds.builder; do
+  gcloud projects add-iam-policy-binding "$P" \
+    --member="serviceAccount:$SA" \
+    --role="roles/$R" \
+    --condition=None \
+    --quiet >/dev/null
+  echo "Granted roles/$R"
+done
+```
+
+You'll see `Granted roles/...` four times. Skip this section if you've
+already run it for this project.
+
+### 6b. Submit the build
 
 ```bash
 PROJECT_ID=$(gcloud config get-value project)
 
-# Read the public-bundle build args from the local .env. If you cloned
-# fresh in Cloud Shell, .env doesn't exist there — paste them inline
-# instead. Either way, these are the four VITE_PIPEDRIVE_* keys plus
-# VITE_N8N_BASE_URL from your laptop's .env.
-N8N_BASE_URL='https://your-n8n.app.n8n.cloud/webhook'
+# Public-bundle build args — Pipedrive custom-field identifiers, not
+# secrets. Paste your four VITE_PIPEDRIVE_* values from your laptop's
+# .env. The n8n URL is NOT here — it's a runtime env var on Cloud Run
+# (step 9), because the server proxies /api/n8n/* to the real host.
 PIPEDRIVE_PERSON_LINKEDIN_KEY='4ba0d4...'
 PIPEDRIVE_PERSON_HEADLINE_KEY='722b3a...'
 PIPEDRIVE_ORG_APOLLO_ID_KEY='85eec8...'
 PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY='1c1e4a...'
+
+SHA=$(git rev-parse --short HEAD)
 
 gcloud builds submit \
   --config=cloudbuild.yaml \
   --substitutions="\
 _REGION=europe-west1,\
 _REPO=leadflow,\
-_N8N_BASE_URL=${N8N_BASE_URL},\
+_SHA=${SHA},\
 _PIPEDRIVE_PERSON_LINKEDIN_KEY=${PIPEDRIVE_PERSON_LINKEDIN_KEY},\
 _PIPEDRIVE_PERSON_HEADLINE_KEY=${PIPEDRIVE_PERSON_HEADLINE_KEY},\
 _PIPEDRIVE_ORG_APOLLO_ID_KEY=${PIPEDRIVE_ORG_APOLLO_ID_KEY},\
@@ -316,6 +344,7 @@ Plain env vars (click **Add variable**):
 |------|-------|
 | `NODE_ENV` | `production` |
 | `DB_DRIVER` | `postgres` |
+| `N8N_BASE_URL` | your n8n webhook base URL, e.g. `https://your-n8n.app.n8n.cloud/webhook` (server-side only — proxied through `/api/n8n/*`) |
 
 Secrets (click **Reference a secret**):
 | Env var name | Secret | Version |

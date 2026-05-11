@@ -94,6 +94,43 @@ app.get('/api/pipedrive/persons', (req, res) => pipedriveProxy(req, res, '/v1/pe
 app.get('/api/pipedrive/persons/:id', (req, res) => pipedriveProxy(req, res, `/api/v2/persons/${encodeURIComponent(req.params.id)}`));
 app.get('/api/pipedrive/organization-fields', (req, res) => pipedriveProxy(req, res, '/v1/organizationFields'));
 
+// ============================================
+// N8N PROXY ENDPOINTS
+// ============================================
+// The browser hits /api/n8n/<path> on the same origin and the server
+// forwards to ${N8N_BASE_URL}/<path>. Keeps the n8n URL out of the public
+// bundle and makes it a runtime-only config (no rebuild to switch envs).
+
+const N8N_BASE_URL = (process.env.N8N_BASE_URL || '').replace(/\/+$/, '');
+
+async function n8nProxy(req, res, n8nPath) {
+  if (!N8N_BASE_URL) {
+    return res.status(500).json({ success: false, error: 'N8N_BASE_URL is not configured on the server' });
+  }
+  try {
+    const url = `${N8N_BASE_URL}${n8nPath}`;
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body ?? {})
+    });
+    const text = await upstream.text();
+    res.status(upstream.status).type(upstream.headers.get('content-type') || 'application/json').send(text);
+  } catch (error) {
+    console.error(`n8n proxy error (${n8nPath}):`, error);
+    res.status(502).json({ success: false, error: error.message });
+  }
+}
+
+app.post('/api/n8n/organizations', (req, res) => n8nProxy(req, res, '/organizations'));
+app.post('/api/n8n/organization-filters', (req, res) => n8nProxy(req, res, '/organization-filters'));
+app.post('/api/n8n/organizations-file', (req, res) => n8nProxy(req, res, '/organizations-file'));
+app.post('/api/n8n/apollo-accepted-organizations', (req, res) => n8nProxy(req, res, '/apollo-accepted-organizations'));
+app.post('/api/n8n/find-people', (req, res) => n8nProxy(req, res, '/find-people'));
+app.post('/api/n8n/save-people', (req, res) => n8nProxy(req, res, '/save-people'));
+app.post('/api/n8n/make-leads', (req, res) => n8nProxy(req, res, '/make-leads'));
+app.post('/api/n8n/send-leads-mails', (req, res) => n8nProxy(req, res, '/send-leads-mails'));
+
 // Apollo search results endpoint - receive organizations from Apollo search
 app.post('/api/apollo/results', async (req, res) => {
   await handleApolloSearchResults(req, res);
@@ -314,12 +351,11 @@ app.post('/api/emails/decision', async (req, res) => {
     }
 
     // Check n8n base URL is configured before deleting from queue
-    const n8nBaseUrl = (process.env.VITE_N8N_BASE_URL || '').replace(/\/+$/, '');
-    if (!n8nBaseUrl) {
-      console.error('VITE_N8N_BASE_URL not configured');
-      return res.status(500).json({ success: false, error: 'VITE_N8N_BASE_URL is not configured on the server' });
+    if (!N8N_BASE_URL) {
+      console.error('N8N_BASE_URL not configured');
+      return res.status(500).json({ success: false, error: 'N8N_BASE_URL is not configured on the server' });
     }
-    const n8nWebhookUrl = `${n8nBaseUrl}/email-approval`;
+    const n8nWebhookUrl = `${N8N_BASE_URL}/email-approval`;
 
     // Archive approved emails so we can recover the original body when
     // a reply comes in (the queue gets cleared right after).

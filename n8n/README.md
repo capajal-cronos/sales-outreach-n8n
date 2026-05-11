@@ -6,7 +6,7 @@ activates them.
 
 ## What the app expects
 
-Nine webhook paths — all under the same base URL (`VITE_N8N_BASE_URL` in
+Nine webhook paths — all under the same base URL (`N8N_BASE_URL` in
 `.env`, e.g. `https://your-n8n.app.n8n.cloud/webhook`):
 
 | Path | Triggered by |
@@ -82,16 +82,16 @@ In n8n:
    - OpenAI / Anthropic (if the email-generation node uses one)
 4. **Publish** the workflow
 5. Confirm each webhook URL — they should all share the same base
-6. Put that base URL into `.env` as `VITE_N8N_BASE_URL`
+6. Put that base URL into `.env` as `N8N_BASE_URL`
 
 ## Sanity-check the webhooks
 
 From the project root, after starting the app and n8n:
 
 ```bash
-# Expects "VITE_N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook" in .env
+# Expects "N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook" in .env
 source .env
-curl -X POST "$VITE_N8N_BASE_URL/email-approval" \
+curl -X POST "$N8N_BASE_URL/email-approval" \
   -H "Content-Type: application/json" \
   -d '{"lead_id":"test","decision":"approve","email_data":{},"timestamp":"2025-01-01T00:00:00Z"}'
 ```
@@ -165,9 +165,9 @@ return { json: email };
 | Path | `email-approval` |
 | Full URL | `https://your-n8n.app.n8n.cloud/webhook/email-approval` |
 
-Make sure `VITE_N8N_BASE_URL` in `.env` points at your n8n webhook base
+Make sure `N8N_BASE_URL` in `.env` points at your n8n webhook base
 (`https://your-n8n.app.n8n.cloud/webhook`). The approval endpoint is derived
-from it as `${VITE_N8N_BASE_URL}/email-approval`.
+from it as `${N8N_BASE_URL}/email-approval`.
 
 ### Payload
 
@@ -305,7 +305,7 @@ cloudflared tunnel delete sales-outreach-n8n
 |---------|-----|
 | Emails not appearing in UI | Backend running on port 3001? HTTP Request node succeeding? |
 | n8n can't reach localhost | Use Cloudflare Tunnel (section above) |
-| Webhook not firing | Check `VITE_N8N_BASE_URL` in `.env`, verify webhook is active in n8n |
+| Webhook not firing | Check `N8N_BASE_URL` in `.env`, verify webhook is active in n8n |
 | Email not sending after approval | Check IF node condition and SMTP credentials |
 | `tunnel credentials not found` | Re-run `cloudflared tunnel login` |
 | Tunnel URL returns error | Check tunnel is **Healthy** in Cloudflare dashboard |

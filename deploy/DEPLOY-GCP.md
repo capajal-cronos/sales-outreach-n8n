@@ -101,7 +101,7 @@ services:
       - /mnt/leadflow-data:/app/data
     environment:
       PORT: 3001
-      VITE_N8N_BASE_URL: https://your-n8n.app.n8n.cloud/webhook
+      N8N_BASE_URL: https://your-n8n.app.n8n.cloud/webhook
       VITE_PIPEDRIVE_API_KEY: ${PIPEDRIVE_API_KEY}
       # ...rest of .env
     command: sh -c "npm ci && npm run build && node server.js"

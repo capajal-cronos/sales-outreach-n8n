@@ -14,7 +14,7 @@ cp .env.example .env
 
 Edit `.env` (see `.env.example` for the full list — key values):
 ```env
-VITE_N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook
+N8N_BASE_URL=https://your-n8n.app.n8n.cloud/webhook
 VITE_PIPEDRIVE_API_KEY=your_pipedrive_api_key
 CLOUDFLARE_TUNNEL_NAME=sales-outreach-n8n
 CLOUDFLARE_TUNNEL_URL=https://your-tunnel-url.com
@@ -110,7 +110,7 @@ src/
 │   └── organizationEndpoint.js # Apollo review handlers
 ├── components/        # One component per workflow step (see below)
 └── config/
-    └── n8n.js         # Derives all 9 webhook URLs from VITE_N8N_BASE_URL
+    └── n8n.js         # Same-origin /api/n8n/* paths (server proxies to N8N_BASE_URL)
 data/                  # JSON "databases", auto-created on startup
 n8n/                   # Workflow exports + Code-node helpers (see n8n/README.md)
 ```
@@ -132,7 +132,7 @@ n8n/                   # Workflow exports + Code-node helpers (see n8n/README.md
 | File | Responsibility |
 |------|----------------|
 | `src/App.jsx` | Holds workflow state, mirrors it to `localStorage`, polls `/api/email-queue/pending`, `/api/responses`, and `/api/workflow-errors`, and unblocks per-lead "campaign pending" state when an error arrives or grace timeout expires. |
-| `src/config/n8n.js` | Reads `VITE_N8N_BASE_URL` and exposes the nine endpoint URLs as `N8N_ENDPOINTS`. Falls back to a deliberately-broken host so missing config produces an obvious error instead of silently hitting localhost. |
+| `src/config/n8n.js` | Exposes same-origin `/api/n8n/*` paths as `N8N_ENDPOINTS`. The Express server proxies each path to the real n8n host (`N8N_BASE_URL` runtime env var), so the n8n URL never reaches the browser bundle. |
 | `src/components/WorkflowProgress.jsx` | Sidebar with the four-step progress nav and per-step counts. |
 | `src/components/OrganizationSearch.jsx` | Step 1. Three search modes (manual domain/name, filter-based, Excel upload), Apollo review queue, accept/decline → `/apollo-accepted-organizations`. |
 | `src/components/PeopleFinder.jsx` | Step 2. Lists Pipedrive persons + organizations with module-level caches that survive tab switches; calls `/find-people`, `/save-people`, `/make-leads`. |

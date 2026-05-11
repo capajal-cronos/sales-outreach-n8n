@@ -11,15 +11,15 @@ WORKDIR /app
 
 # Vite bakes VITE_* env vars into the bundle at build time, so they have to
 # be present during `npm run build`. Pass them via --build-arg (or Cloud
-# Build substitutions). They are field-key identifiers and the n8n base URL
-# — not secrets; safe to inline into the public bundle.
-ARG VITE_N8N_BASE_URL
+# Build substitutions). These are Pipedrive custom-field identifiers — not
+# secrets, safe to inline into the public bundle. The n8n URL is server-only
+# (the browser hits same-origin /api/n8n/* which the server proxies), so it
+# is NOT a build arg; it's a runtime env var (N8N_BASE_URL).
 ARG VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY
 ARG VITE_PIPEDRIVE_PERSON_HEADLINE_KEY
 ARG VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY
 ARG VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY
-ENV VITE_N8N_BASE_URL=$VITE_N8N_BASE_URL \
-    VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY=$VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY \
+ENV VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY=$VITE_PIPEDRIVE_PERSON_LINKEDIN_KEY \
     VITE_PIPEDRIVE_PERSON_HEADLINE_KEY=$VITE_PIPEDRIVE_PERSON_HEADLINE_KEY \
     VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY=$VITE_PIPEDRIVE_ORG_APOLLO_ID_KEY \
     VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY=$VITE_PIPEDRIVE_ORG_COMPANY_DESCRIPTION_KEY

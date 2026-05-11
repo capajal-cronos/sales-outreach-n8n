@@ -92,7 +92,7 @@ prompt_if_empty() {
 say ""
 say "Enter your configuration (press Enter to skip a field):"
 prompt_if_empty PIPEDRIVE_API_KEY      "Pipedrive API token"
-prompt_if_empty VITE_N8N_BASE_URL      "n8n webhook base URL (e.g. https://your-n8n.app.n8n.cloud/webhook)"
+prompt_if_empty N8N_BASE_URL           "n8n webhook base URL (e.g. https://your-n8n.app.n8n.cloud/webhook)"
 
 # ─── Pipedrive custom fields ────────────────────────────────────────────────
 PIPEDRIVE_TOKEN=$(env_get PIPEDRIVE_API_KEY)
