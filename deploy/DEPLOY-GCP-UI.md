@@ -422,12 +422,53 @@ four-stage workflow. If anything errors, check **Cloud Run** → service
 
 ## Updating later
 
-UI route: rebuild from Cloud Shell (rerun step 6), then on the Cloud
-Run service detail page → **Edit & deploy new revision** → just click
-**Deploy** at the bottom (no edits needed; it picks up the new
-`:latest` image).
+Full redeploy flow after pushing a code change to GitHub:
 
-CLI route — one liner in Cloud Shell:
+### Step 1 — Pull the latest code in Cloud Shell
+
+```bash
+cd ~/leadflow
+git pull
+```
+
+### Step 2 — (Only if `db/init.sql` changed) Apply the migration
+
+```bash
+INSTANCE_CONNECTION_NAME='leadflow-prod-2026:europe-west1:leadflow-db'
+DB_PASSWORD='<paste the leadflow user password — see "Resetting the DB password" below if lost>'
+
+# Re-download the proxy if Cloud Shell wiped your previous copy
+[ -x ./cloud-sql-proxy ] || curl -o cloud-sql-proxy \
+  https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.13.0/cloud-sql-proxy.linux.amd64 \
+  && chmod +x cloud-sql-proxy
+
+./cloud-sql-proxy "$INSTANCE_CONNECTION_NAME" --port=5432 &
+sleep 3
+
+DATABASE_URL="postgres://leadflow:${DB_PASSWORD}@127.0.0.1:5432/leadflow" \
+  npm run db:migrate
+
+kill %1
+```
+
+`npm run db:migrate` is idempotent — re-applies `init.sql` whether the
+column already exists or not.
+
+### Step 3 — Build a new container image
+
+```bash
+bash deploy/build.sh
+```
+
+Wait for `STATUS: SUCCESS`.
+
+### Step 4 — Deploy the new image to Cloud Run
+
+**UI:** Cloud Run → `leadflow` → **Edit & deploy new revision** →
+scroll to bottom → **Deploy**. No edits needed; the `:latest` tag
+points at your new image.
+
+**CLI one-liner in Cloud Shell:**
 
 ```bash
 gcloud run services update leadflow \
@@ -435,8 +476,36 @@ gcloud run services update leadflow \
   --region=europe-west1
 ```
 
-If you change `db/init.sql`, redo step 4 (Cloud Shell + auth proxy +
-`npm run db:migrate`) — it's idempotent.
+### Step 5 — Verify
+
+```
+https://<your-cloud-run-url>/health
+```
+Should return `{"status":"ok","driver":"postgres",...}`. Walk the
+four-stage workflow if the change touched user-facing code.
+
+---
+
+## Resetting the DB password
+
+If you lose the `leadflow` user password (or just want to rotate it):
+
+1. **Cloud Console → SQL → `leadflow-db` → Users tab**
+2. Click the **⋮** next to user `leadflow` → **Change password**
+3. Either type a new one or click **Generate**
+4. **OK** — takes effect immediately
+
+You then have to update the `database-url` secret so Cloud Run keeps
+working:
+
+5. **Secret Manager → `database-url` → + New version**
+6. Value: `postgres://leadflow:<NEW_PASSWORD>@/leadflow?host=/cloudsql/<INSTANCE_CONNECTION_NAME>`
+7. **Add new version**
+
+Cloud Run will pick up the new secret version on the next revision —
+trigger one by deploying any revision (e.g. **Edit & deploy new revision
+→ Deploy** with no edits). The `:latest` reference in step 8 of the
+original deploy means you don't have to wire the new version manually.
 
 ---
 

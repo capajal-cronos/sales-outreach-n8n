@@ -299,18 +299,55 @@ check `gcloud run services logs read "$SERVICE_NAME" --region="$REGION"`.
 
 ## Updating after this initial deploy
 
-To roll out a new version of the app:
+Full redeploy flow after pushing a code change to GitHub. From Cloud Shell:
 
 ```bash
-gcloud builds submit --config=cloudbuild.yaml \
-  --substitutions="_REGION=$REGION,_REPO=$REPO,_SHA=$(git rev-parse --short HEAD),..."
+# 1. Pull the latest code
+cd ~/leadflow && git pull
 
+# 2. (Only if db/init.sql changed) Apply the migration. Idempotent.
+[ -x ./cloud-sql-proxy ] || curl -o cloud-sql-proxy \
+  https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.13.0/cloud-sql-proxy.linux.amd64 \
+  && chmod +x cloud-sql-proxy
+./cloud-sql-proxy "$INSTANCE_CONNECTION_NAME" --port=5432 &
+sleep 3
+DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@127.0.0.1:5432/${DB_NAME}" npm run db:migrate
+kill %1
+
+# 3. Rebuild and push the image
+bash deploy/build.sh
+
+# 4. Roll the new image onto Cloud Run
 gcloud run services update "$SERVICE_NAME" \
   --image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/app:latest" \
   --region="$REGION"
 ```
 
-If you change `db/init.sql`, re-apply via the Auth Proxy (step 4 again).
+---
+
+## Resetting the DB password
+
+If you lose the `leadflow` user password (or just want to rotate it):
+
+```bash
+# Generate a new password via gcloud
+NEW_PASSWORD=$(openssl rand -base64 24)
+gcloud sql users set-password leadflow \
+  --instance="$INSTANCE_NAME" \
+  --password="$NEW_PASSWORD"
+
+# Update the database-url secret so Cloud Run keeps working
+echo -n "postgres://leadflow:${NEW_PASSWORD}@/leadflow?host=/cloudsql/${INSTANCE_CONNECTION_NAME}" \
+  | gcloud secrets versions add database-url --data-file=-
+
+# Trigger a fresh Cloud Run revision so it picks up the new secret version
+gcloud run services update "$SERVICE_NAME" --region="$REGION" \
+  --update-labels="rotated=$(date +%s)"
+```
+
+The `:latest` reference in the deployed service (step 8) means new
+secret versions are picked up automatically on each new revision —
+no manual rewiring needed.
 
 ---
 
