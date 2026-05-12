@@ -1,0 +1,72 @@
+<mxfile host="65bd71144e">
+    <diagram name="Runtime architecture" id="runtime">
+        <mxGraphModel dx="1436" dy="987" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="980" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="&lt;b&gt;LeadFlow Pro — Runtime architecture&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;color: #555&quot;&gt;Top-down: browser → Cloud Run → managed services / external APIs / n8n. Solid = request-time, dashed = boot-time.&lt;/font&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="20" width="800" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend" value="&lt;b&gt;Legend&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#6c8ebf&quot;&gt;■&lt;/font&gt; GCP managed&amp;nbsp;&amp;nbsp; &lt;font color=&quot;#82b366&quot;&gt;■&lt;/font&gt; Your app code&amp;nbsp;&amp;nbsp; &lt;font color=&quot;#d6b656&quot;&gt;■&lt;/font&gt; Config / secrets&lt;br&gt;&lt;font color=&quot;#b85450&quot;&gt;■&lt;/font&gt; n8n&amp;nbsp;&amp;nbsp; &lt;font color=&quot;#9673a6&quot;&gt;■&lt;/font&gt; External API" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cccccc;fontSize=11;align=left;spacingLeft=10;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="90" width="320" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="browser" value="&lt;b&gt;Browser&lt;/b&gt;&lt;br&gt;React SPA from dist/&lt;br&gt;&lt;font style=&quot;font-size: 10px;color: #555&quot;&gt;OrganizationSearch · PeopleFinder · LeadManagement · ResponseMonitor&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="100" width="400" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="cr-container" value="&lt;b&gt;Cloud Run service: &quot;leadflow&quot;&lt;/b&gt;&amp;nbsp;&amp;nbsp;&lt;font style=&quot;font-size: 10px;color: #444&quot;&gt;europe-west1 · 1 vCPU / 512 MiB · scale 0–3&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#82b366;dashed=1;verticalAlign=top;fontSize=13;fontStyle=1;align=center;spacingTop=10;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="240" width="1160" height="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="express" value="&lt;b&gt;server.js&lt;/b&gt; — Express on port 8080 · single Node process · owns all credentials and DB access" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="160" y="280" width="1080" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="g-browser" value="&lt;b&gt;Browser-facing routes&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;color: #555&quot;&gt;Same-origin requests from the React app&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;GET&amp;nbsp;&amp;nbsp; / · /assets/*&lt;br&gt;GET&amp;nbsp;&amp;nbsp; /api/leads&lt;br&gt;GET&amp;nbsp;&amp;nbsp; /api/email-queue/pending&lt;br&gt;GET&amp;nbsp;&amp;nbsp; /api/responses&lt;br&gt;POST /api/emails/decision&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+                    <mxGeometry x="160" y="340" width="340" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="g-proxy" value="&lt;b&gt;Outbound proxies&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;color: #555&quot;&gt;Forward browser calls to external APIs&lt;br&gt;with credentials added server-side&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;GET&amp;nbsp;&amp;nbsp; /api/pipedrive/*&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;→ api.pipedrive.com&lt;br&gt;POST /api/n8n/*&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;→ N8N_BASE_URL&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+                    <mxGeometry x="530" y="340" width="340" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="g-callbacks" value="&lt;b&gt;Inbound callbacks (from n8n)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;color: #555&quot;&gt;n8n workflows POST results back here&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;POST /api/responses&lt;br&gt;POST /api/email-queue&lt;br&gt;POST /api/apollo/results&lt;br&gt;POST /api/workflow-errors&lt;br&gt;POST /api/organization/*&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+                    <mxGeometry x="900" y="340" width="340" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="db-layer" value="&lt;b&gt;DB layer&lt;/b&gt; — src/api/db/&amp;nbsp;&amp;nbsp; · &amp;nbsp; switches on DB_DRIVER (postgres / json) &amp;nbsp; · &amp;nbsp; called by every route that needs persistence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="160" y="525" width="1080" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="cloudsql" value="&lt;b&gt;Cloud SQL Postgres&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;leadflow-db (db-f1-micro)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;color: #555&quot;&gt;email_queue · apollo_pending&lt;br&gt;sent_emails · responses&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="700" width="280" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="secrets" value="&lt;b&gt;Secret Manager&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;color: #555&quot;&gt;Read once at container boot:&lt;br&gt;• DATABASE_URL&lt;br&gt;• PIPEDRIVE_API_KEY&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="700" width="280" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="pipedrive" value="&lt;b&gt;Pipedrive REST API&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;color: #555&quot;&gt;api.pipedrive.com&lt;br&gt;Auth: api_token query param&lt;br&gt;Orgs · persons · leads · fields&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="740" y="700" width="280" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="n8n" value="&lt;b&gt;n8n Cloud&lt;/b&gt; (or self-hosted)&lt;br&gt;&lt;font style=&quot;font-size: 10px;color: #555&quot;&gt;N8N_BASE_URL points here&lt;br&gt;9 webhook workflows + IMAP trigger&lt;br&gt;Talks to OpenRouter, SMTP, Pipedrive&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;" vertex="1" parent="1">
+                    <mxGeometry x="1050" y="700" width="280" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="footer" value="&lt;b&gt;Not shown (separate from runtime):&lt;/b&gt;&amp;nbsp;&amp;nbsp;Build pipeline (Cloud Build → Artifact Registry → image pull on new revision) · IAM identity (leadflow-runtime service account with cloudsql.client + secretmanager.secretAccessor)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;align=center;fontColor=#444444;" vertex="1" parent="1">
+                    <mxGeometry x="120" y="870" width="1210" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-browser" value="HTTPS · same origin" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=11;" edge="1" parent="1" source="browser" target="cr-container">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-sql" value="unix socket&lt;br&gt;/cloudsql/&amp;lt;conn&amp;gt;" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;fontSize=10;exitX=0.15;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="db-layer" target="cloudsql">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-secrets" value="read at boot" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=1;fontSize=10;strokeColor=#666666;fontColor=#666666;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.4;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="secrets" target="cr-container">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-pipedrive" value="proxied REST calls&lt;br&gt;adds api_token" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g-proxy" target="pipedrive">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-n8n-out" value="POST webhooks&lt;br&gt;(also /email-approval&lt;br&gt;from /api/emails/decision)" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;fontSize=10;entryX=0.407;entryY=-0.017;entryDx=0;entryDy=0;exitX=0.847;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="1" source="g-proxy" target="n8n">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="870" y="500" as="sourcePoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e-n8n-in" value="HTTPS · POST /api/...&lt;br&gt;back to Cloud Run URL" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#b85450;fontSize=10;fontColor=#b85450;entryX=0.935;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="n8n" target="cr-container">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

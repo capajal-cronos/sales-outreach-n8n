@@ -50,6 +50,16 @@ Link a billing account (UI → *Billing* → link to project, or the
 
 ## 2. Enable APIs
 
+GCP services are off per-project until you explicitly enable them.
+
+| API | Why this app needs it |
+|-----|----------------------|
+| `run.googleapis.com` | Cloud Run — serves the Node/Express container |
+| `cloudbuild.googleapis.com` | Cloud Build — packages the repo into a Docker image |
+| `artifactregistry.googleapis.com` | Stores the built images Cloud Run pulls from |
+| `sqladmin.googleapis.com` | Cloud SQL — managed Postgres for the four app tables |
+| `secretmanager.googleapis.com` | Secret Manager — holds DB password + Pipedrive token |
+
 ```bash
 gcloud services enable \
   run.googleapis.com \
@@ -62,6 +72,10 @@ gcloud services enable \
 ---
 
 ## 3. Cloud SQL Postgres instance
+
+This is the production database. Cloud Run instances are stateless and
+ephemeral, so the email queue, sent-mail archive, Apollo pending, and
+responses can't live on disk in the container — they go here instead.
 
 Smallest tier. Public IP, but with no authorised networks — Cloud Run
 reaches it via the Cloud SQL Auth Proxy unix socket, so the public IP
@@ -94,6 +108,14 @@ echo "$INSTANCE_CONNECTION_NAME"
 
 ## 4. Apply the schema
 
+The instance is empty. `db/init.sql` defines the four tables the app
+expects (`email_queue`, `apollo_pending`, `sent_emails`, `responses`).
+To run that SQL from your laptop against a Cloud SQL instance, use the
+**Cloud SQL Auth Proxy** — a Google-provided binary that forwards a
+local TCP port to your DB over an authenticated tunnel. That way `psql`
+(and the migrate script) connect to `127.0.0.1:5432` without exposing
+the DB to the public internet.
+
 Run `db/init.sql` against the new Cloud SQL instance from your laptop via
 the Cloud SQL Auth Proxy.
 
@@ -119,6 +141,10 @@ terminal) when done.
 
 ## 5. Artifact Registry repo
 
+A private Docker registry inside GCP. Cloud Build pushes the built
+image here in step 6, and Cloud Run pulls from here when serving
+traffic. You need one repository per project.
+
 ```bash
 gcloud artifacts repositories create "$REPO" \
   --repository-format=docker \
@@ -129,6 +155,14 @@ gcloud artifacts repositories create "$REPO" \
 ---
 
 ## 6. Build & push the image
+
+**Cloud Build** is GCP's hosted CI. It uploads the repo as a tarball,
+runs `docker build` against `Dockerfile` (which executes `npm ci &&
+npm run build` to produce the static frontend in `dist/`), tags the
+output image, and pushes both tags (`:_SHA` and `:latest`) to
+Artifact Registry. Takes 3–6 minutes. You could do this with plain
+`docker build && docker push` on your laptop, but Cloud Build is
+faster and free within the daily quota.
 
 GCP projects created after April 2024 use the Compute Engine default
 service account for Cloud Build, and it isn't auto-granted the storage,
@@ -177,6 +211,16 @@ Run (see step 9), so changing n8n environments doesn't require a rebuild.
 
 ## 7. Service account for Cloud Run
 
+Cloud Run needs an identity to act as when calling other GCP services
+(Cloud SQL, Secret Manager). A **service account** is that identity —
+like a user but for code. We create a dedicated one (`leadflow-runtime`)
+scoped to exactly what this app needs:
+
+- `roles/cloudsql.client` — lets it open a connection through the
+  Cloud SQL Auth Proxy socket
+- `roles/secretmanager.secretAccessor` — lets it read the DB password
+  and Pipedrive token at boot
+
 ```bash
 gcloud iam service-accounts create leadflow-runtime \
   --display-name="LeadFlow Cloud Run runtime"
@@ -196,6 +240,13 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 
 ## 8. Secrets in Secret Manager
 
+Sensitive values (DB password, Pipedrive token) don't belong in plain
+Cloud Run env vars — those are readable by anyone with
+`Cloud Run Viewer`. **Secret Manager** keeps values behind their own
+ACL (`Secret Manager Secret Accessor` role, granted in step 7),
+supports versioning so you can rotate without redeploys, and is
+referenced from Cloud Run by name + version instead of value.
+
 ```bash
 # Pipedrive API token (server-side only)
 PIPEDRIVE_API_KEY=$(grep -E '^(VITE_)?PIPEDRIVE_API_KEY=' .env | head -1 | cut -d= -f2)
@@ -213,6 +264,13 @@ with `--add-cloudsql-instances`.
 ---
 
 ## 9. Deploy to Cloud Run
+
+**Cloud Run** is GCP's serverless container runtime. You hand it an
+image and a few knobs (memory, CPU, concurrency, scaling); it gives
+you back a public HTTPS URL and runs containers on demand. With
+`min-instances=0` it scales to zero between requests — you pay
+nothing while idle, ~1-2s cold-start when traffic arrives. This is
+what replaces `npm run server` in production.
 
 ```bash
 gcloud run deploy "$SERVICE_NAME" \
@@ -232,15 +290,20 @@ gcloud run deploy "$SERVICE_NAME" \
   --update-secrets="DATABASE_URL=database-url:latest,PIPEDRIVE_API_KEY=pipedrive-api-key:latest"
 ```
 
-Notes:
+Notes — what each flag does and why:
 
 | Flag | Why |
 |------|-----|
-| `--allow-unauthenticated` | Public URL. n8n posts directly to `/api/*`. |
+| `--allow-unauthenticated` | Makes the URL publicly reachable so n8n can POST to `/api/*` without an auth token. Auth (when added later) belongs at the app layer. |
+| `--service-account` | Identity Cloud Run uses to call other GCP APIs. Without this it uses the broad default compute account. |
+| `--add-cloudsql-instances` | Tells Cloud Run to mount the `/cloudsql/<conn>` unix socket inside the container. The `pg` library connects through it via the `host=/cloudsql/...` parameter in the DATABASE_URL. No public IP needed. |
+| `--memory=512Mi` / `--cpu=1` | Minimum useful slice for a Node app. Increasing memory linearly increases per-second cost while a request is being served. |
+| `--concurrency=80` | How many parallel requests one container instance can handle. Node is single-threaded but async — 80 is the Cloud Run default and fits this app's I/O-bound profile. |
+| `--timeout=60` | Max seconds a single request can take before Cloud Run kills it. The longest API call (Pipedrive enrich) is ~5s, so 60s is generous. |
 | `--min-instances=0` | Scale to zero. ~1–3s cold start; fine for an internal tool. |
 | `--max-instances=3` | Budget ceiling. Handles bursts; prevents surprise bills. |
-| `--add-cloudsql-instances` | Mounts `/cloudsql/<conn>` unix socket for `pg`. |
-| `--update-secrets` | Pulls secrets at boot — they don't show up in `gcloud run services describe`. |
+| `--set-env-vars` | Plain runtime env vars. `NODE_ENV=production` makes Express serve `dist/` and use prod CORS. `DB_DRIVER=postgres` routes the app to the postgres driver instead of `data/*.json`. |
+| `--update-secrets` | Pulls secrets at boot as env vars. Values aren't visible in `gcloud run services describe`, unlike `--set-env-vars`. |
 
 After it deploys, copy the URL it prints (`https://leadflow-xxx-ew.a.run.app`).
 

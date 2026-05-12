@@ -50,14 +50,18 @@ top-bar dropdown.
 
 ## 2. Enable APIs
 
-UI → top-left menu → **APIs & Services** → **Library**. Search and
-**Enable** these one by one (each takes ~10 seconds):
+GCP keeps each service's API turned off by default per project. You
+have to enable each one before you can use it. UI → top-left menu →
+**APIs & Services** → **Library**. Search and **Enable** these one by
+one (each takes ~10 seconds):
 
-- Cloud Run Admin API
-- Cloud Build API
-- Artifact Registry API
-- Cloud SQL Admin API
-- Secret Manager API
+| API | Why this app needs it |
+|-----|----------------------|
+| **Cloud Run Admin API** | Runs the Node/Express container that serves the UI and API endpoints. |
+| **Cloud Build API** | Lets `gcloud builds submit` package your repo into a Docker image (step 6). |
+| **Artifact Registry API** | Stores the built Docker images Cloud Run pulls from. |
+| **Cloud SQL Admin API** | Lets you create and manage the Postgres instance (step 3). |
+| **Secret Manager API** | Holds the DB password and Pipedrive token so they're not in env vars or source. |
 
 Quicker alternative: open **Cloud Shell** (`>_` icon top right) and paste:
 
@@ -70,6 +74,11 @@ gcloud services enable \
 ---
 
 ## 3. Cloud SQL Postgres instance
+
+This is the production database — replaces the `data/*.json` files
+used in local dev. Cloud Run instances are stateless and ephemeral, so
+the only durable place to keep the email queue, sent-mail archive,
+Apollo pending, and responses is a managed DB.
 
 UI → menu → **SQL** → **Create instance** → choose **PostgreSQL**.
 
@@ -123,6 +132,14 @@ The default `postgres` admin user stays untouched.
 
 ## 4. Apply the schema (Cloud Shell)
 
+Now you have an empty Postgres instance. `db/init.sql` defines the four
+tables (`email_queue`, `apollo_pending`, `sent_emails`, `responses`) the
+app expects. To run that SQL against a Cloud SQL instance from outside
+GCP, you go through the **Cloud SQL Auth Proxy** — a small binary that
+forwards a local port to your private DB over an authenticated tunnel,
+so you can `psql` to `127.0.0.1:5432` without exposing the DB to the
+public internet.
+
 Open **Cloud Shell** (`>_` icon, top right). It opens a terminal at the
 bottom of your browser.
 
@@ -169,6 +186,11 @@ Should list four tables.
 
 ## 5. Artifact Registry repo
 
+A "private Docker Hub" inside GCP. Cloud Build will push your built
+images here in step 6, and Cloud Run will pull from here when serving
+traffic. You need one repository per project (this one's named
+`leadflow`, matching the service name).
+
 UI → menu → **Artifact Registry** → **Repositories** → **Create
 repository**.
 
@@ -185,6 +207,14 @@ repository**.
 ---
 
 ## 6. Build & push the image (Cloud Shell)
+
+Cloud Build is GCP's hosted CI. `gcloud builds submit` uploads your
+repo tarball, spins up a temp VM, runs `docker build` against your
+`Dockerfile` (which itself runs `npm ci && npm run build`), tags the
+result, and pushes it to Artifact Registry. The whole thing takes
+3–6 minutes. You could do this with plain `docker build && docker push`
+on your laptop instead, but Cloud Build is faster, free under the
+daily quota, and runs in the same network as Artifact Registry.
 
 Still in your Cloud Shell session in the cloned repo.
 
@@ -250,6 +280,13 @@ image with two tags (`latest` and a short SHA).
 
 ## 7. Service account for Cloud Run
 
+Cloud Run needs an identity to act as when it talks to other GCP
+services (the DB, Secret Manager, etc.). A **service account** is that
+identity — like a user but for code. We create a dedicated one for
+this service (`leadflow-runtime`) instead of using the default
+compute account, so its permissions are scoped to exactly what this
+app needs and nothing else.
+
 UI → menu → **IAM & Admin** → **Service Accounts** → **Create service
 account**.
 
@@ -273,6 +310,14 @@ Click **Continue** → **Done**.
 ---
 
 ## 8. Secrets in Secret Manager
+
+Anything sensitive (DB password, Pipedrive API token) shouldn't sit in
+plain Cloud Run env vars — those are visible to anyone with
+`Cloud Run Viewer` access. **Secret Manager** keeps the value behind
+its own access control (`Secret Manager Secret Accessor` role, which
+you granted in step 7), supports versioning so you can rotate without
+redeploys, and is referenced from Cloud Run by name + version instead
+of value.
 
 UI → menu → **Security** → **Secret Manager** → **Create secret**.
 
@@ -311,6 +356,13 @@ of step 3 (e.g. `leadflow-prod-2026:europe-west1:leadflow-db`).
 ---
 
 ## 9. Deploy to Cloud Run
+
+**Cloud Run** is the serverless container runtime. You hand it your
+image and a few knobs (memory, CPU, concurrency, scaling); it gives
+you back a public HTTPS URL and runs containers on demand. Critically,
+with `min-instances=0` it scales to zero between requests — you pay
+nothing while idle. Cold-start is ~1-2 seconds for a Node app like
+this. This is what actually replaces `npm run server` in production.
 
 UI → menu → **Cloud Run** → **Deploy container** → **Service**.
 
@@ -354,9 +406,16 @@ Secrets (click **Reference a secret**):
 
 **Connections** tab:
 - **Cloud SQL connections** → **Add connection** → pick `leadflow-db`.
+  This is what makes the `host=/cloudsql/...` socket from the
+  `database-url` secret actually exist inside the container —
+  Cloud Run mounts a unix socket for every Cloud SQL instance you
+  attach here. Without this, the app boots but can't reach the DB.
 
 **Security** tab:
-- **Service account** → choose `leadflow-runtime`.
+- **Service account** → choose `leadflow-runtime`. This is the
+  identity from step 7. Without it, Cloud Run runs as the default
+  compute account, which has way more permissions than this app
+  needs and is shared with anything else in the project.
 
 ### Autoscaling
 
