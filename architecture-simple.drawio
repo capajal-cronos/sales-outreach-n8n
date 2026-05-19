@@ -1,10 +1,10 @@
 <mxfile host="65bd71144e">
     <diagram name="Simplified architecture" id="simple">
-        <mxGraphModel dx="1436" dy="987" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="780" math="0" shadow="0">
+        <mxGraphModel dx="1194" dy="1157" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="780" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-                <mxCell id="title" value="&lt;b&gt;LeadFlow Pro — Simplified architecture&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;color: #555&quot;&gt;Six boxes, four flows. See &lt;i&gt;architecture.drawio&lt;/i&gt; for the detailed view.&lt;/font&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;" parent="1" vertex="1">
+                <mxCell id="title" value="&lt;b&gt;LeadFlow Pro — Simplified architecture&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=16;" parent="1" vertex="1">
                     <mxGeometry x="280" y="20" width="540" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="browser" value="&lt;b&gt;Browser&lt;/b&gt;&lt;br&gt;React UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;align=center;" parent="1" vertex="1">
