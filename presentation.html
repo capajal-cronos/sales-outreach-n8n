@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LeadFlow — AI Sales Outreach</title>
+
+<!-- LeadFlow house style: Plus Jakarta Sans (headings) + Inter (body) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+
+<style>
+/* ===========================================
+   VIEWPORT FITTING: MANDATORY BASE STYLES
+   =========================================== */
+html, body { height: 100%; overflow-x: hidden; margin: 0; }
+html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+
+.slide {
+    width: 100vw; height: 100vh; height: 100dvh;
+    overflow: hidden; scroll-snap-align: start;
+    display: flex; flex-direction: column; position: relative;
+}
+.slide-content {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    max-height: 100%; overflow: hidden; padding: var(--slide-padding);
+    position: relative; z-index: 2;
+}
+
+:root {
+    --title-size: clamp(1.5rem, 5vw, 4rem);
+    --h2-size: clamp(1.25rem, 3.5vw, 2.5rem);
+    --h3-size: clamp(1rem, 2.5vw, 1.6rem);
+    --body-size: clamp(0.8rem, 1.5vw, 1.15rem);
+    --small-size: clamp(0.7rem, 1vw, 0.9rem);
+    --slide-padding: clamp(1.25rem, 5vw, 5rem);
+    --content-gap: clamp(0.5rem, 2vw, 1.6rem);
+    --element-gap: clamp(0.25rem, 1vw, 1rem);
+
+    /* LeadFlow warm-neutral palette (from src/index.css) */
+    --bg: #F8F7F6;
+    --surface: #FFFFFF;
+    --muted-bg: #F1F0EE;
+    --ink: #1C1917;
+    --ink-2: #57534E;
+    --ink-3: #8C857D;
+    --border: #E7E5E4;
+    --border-strong: #D6D3D1;
+    --accent: #C4956A;        /* copper */
+    --accent-dark: #A67B5B;
+    --accent-light: #E8DDD4;
+    --primary: #3a312c;       /* dark warm brown */
+    --primary-deep: #241e1b;
+    --success: #3D7C47;
+
+    --shadow-sm: 0 1px 3px rgba(28, 25, 23, 0.08);
+    --shadow-md: 0 4px 16px rgba(28, 25, 23, 0.10);
+    --shadow-lg: 0 12px 32px rgba(28, 25, 23, 0.14);
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-height: 700px) {
+    :root { --slide-padding: clamp(1rem,3.5vw,2.5rem); --content-gap: clamp(0.4rem,1.5vw,1rem);
+            --title-size: clamp(1.3rem,4.5vw,2.6rem); --h2-size: clamp(1.05rem,3vw,1.8rem); }
+}
+@media (max-height: 600px) {
+    :root { --slide-padding: clamp(0.7rem,2.5vw,1.6rem); --title-size: clamp(1.15rem,4vw,2rem);
+            --body-size: clamp(0.72rem,1.2vw,0.95rem); }
+    .nav-dots, .kbd-hint { display: none; }
+}
+@media (max-width: 640px) {
+    :root { --title-size: clamp(1.3rem, 7vw, 2.5rem); }
+    .grid-cards, .flow, .row { grid-template-columns: 1fr !important; }
+}
+
+/* ===========================================
+   THEME — warm, light, simple
+   =========================================== */
+* { box-sizing: border-box; }
+body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, .display {
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; margin: 0; color: var(--ink);
+}
+
+/* Fixed chrome */
+.progress { position: fixed; top: 0; left: 0; height: 3px; width: 0; z-index: 50; background: var(--accent); transition: width .25s ease; }
+.nav-dots { position: fixed; right: clamp(12px, 2vw, 26px); top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 11px; }
+.nav-dots button { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--border-strong); background: transparent; cursor: pointer; padding: 0; transition: all .2s ease; }
+.nav-dots button.active { background: var(--accent); border-color: var(--accent); transform: scale(1.25); }
+.counter { position: fixed; left: clamp(14px,2.5vw,30px); bottom: clamp(12px,2.5vh,26px); z-index: 50; font-size: var(--small-size); color: var(--ink-3); letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
+.counter b { color: var(--accent-dark); }
+.kbd-hint { position: fixed; right: clamp(14px,2.5vw,30px); bottom: clamp(12px,2.5vh,26px); z-index: 50; font-size: var(--small-size); color: var(--ink-3); }
+.kbd-hint kbd { border: 1px solid var(--border-strong); border-radius: 5px; padding: 1px 6px; font-family: inherit; color: var(--ink-2); background: var(--surface); }
+
+/* Shared atoms */
+.eyebrow { display: inline-flex; align-items: center; gap: .55em; font-size: var(--small-size); letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-dark); font-weight: 600; }
+.eyebrow::before { content: ""; width: clamp(18px,3vw,38px); height: 2px; background: var(--accent); border-radius: 2px; }
+.hot { color: var(--accent-dark); }
+.lead { font-size: var(--body-size); color: var(--ink-2); max-width: 62ch; line-height: 1.55; }
+.kicker { font-size: var(--body-size); color: var(--ink); font-weight: 600; }
+
+/* Cards & layout */
+.grid-cards { display: grid; gap: clamp(0.6rem, 1.4vw, 1.1rem); width: min(100%, 1080px); }
+.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.card {
+    border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+    padding: clamp(0.9rem, 1.8vw, 1.5rem); position: relative; overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+.card .top-line { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform .35s var(--ease); }
+.slide.active .card .top-line { transform: scaleX(1); }
+.card .idx { font-family: "Plus Jakarta Sans"; font-weight: 800; color: var(--accent-dark); font-size: var(--h3-size); }
+.card h3 { font-size: var(--h3-size); margin: .35em 0 .3em; }
+.card p { font-size: var(--small-size); color: var(--ink-2); line-height: 1.5; margin: 0; }
+
+.feature-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: clamp(0.55rem, 1.4vh, 1.05rem); max-width: 64ch; }
+.feature-list li { font-size: var(--body-size); line-height: 1.45; padding-left: 1.7em; position: relative; color: var(--ink-2); }
+.feature-list li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--accent); }
+.feature-list li b { color: var(--ink); font-weight: 600; }
+
+.chips { display: flex; flex-wrap: wrap; gap: clamp(.4rem,1vw,.65rem); }
+.chip { font-size: var(--small-size); border: 1px solid var(--border); border-radius: 999px; padding: .45em 1em; color: var(--ink-2); background: var(--surface); box-shadow: var(--shadow-sm); }
+.chip b { color: var(--accent-dark); font-weight: 600; }
+.chip.win { display: inline-flex; align-items: center; }
+.chip.win::before { content: ""; flex: 0 0 auto; width: .6em; height: .34em; border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); margin-right: .6em; margin-top: -.16em; }
+
+/* Flow (how it works) */
+.flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(.6rem,1.4vw,1.1rem); width: min(100%, 1000px); }
+.node { border: 1px solid var(--border); border-radius: 14px; padding: clamp(.95rem,1.6vw,1.4rem); text-align: center; background: var(--surface); box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
+.node-top { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform .35s var(--ease); }
+.slide.active .node-top { transform: scaleX(1); }
+.node-k { font-size: var(--small-size); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-dark); font-weight: 600; }
+.node h4 { font-family:"Plus Jakarta Sans"; font-weight:700; margin:.45em 0 .25em; font-size: var(--h3-size); color: var(--ink); }
+.node p { margin: 0; font-size: var(--small-size); color: var(--ink-2); line-height:1.45; }
+
+/* Title slide — mirrors the app's dark sidebar surface */
+#s1 { color: #fff; }
+#s1 .bg-brand { position: absolute; inset: 0; z-index: 0;
+    background: radial-gradient(circle at 80% 15%, #52463e 0%, #3a312c 70%, #241e1b 100%); }
+.title-wrap { display: flex; flex-direction: column; gap: var(--content-gap); }
+.mega { font-size: clamp(2.6rem, 11vw, 8.5rem); line-height: 0.95; color: #fff; font-weight: 800; }
+.mega .hot { color: var(--accent); }
+.title-sub { font-size: var(--h3-size); color: rgba(255,255,255,0.82); font-weight: 500; line-height: 1.35; }
+.title-tag { font-size: var(--body-size); color: rgba(255,255,255,0.55); }
+#s1 .eyebrow { color: var(--accent); }
+#s1 .eyebrow::before { background: var(--accent); }
+
+/* Reveal animation — fast & subtle */
+[data-reveal] { opacity: 0; transform: translateY(14px); transition: opacity .28s ease, transform .28s var(--ease); }
+.slide.active [data-reveal] { opacity: 1; transform: none; }
+.slide.active [data-reveal="1"] { transition-delay: .03s; }
+.slide.active [data-reveal="2"] { transition-delay: .08s; }
+.slide.active [data-reveal="3"] { transition-delay: .13s; }
+.slide.active [data-reveal="4"] { transition-delay: .18s; }
+.slide.active [data-reveal="5"] { transition-delay: .23s; }
+.slide.active [data-reveal="6"] { transition-delay: .28s; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .15s !important; }
+    html { scroll-behavior: auto; }
+    [data-reveal] { transform: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Fixed chrome -->
+<div class="progress" id="progress"></div>
+<nav class="nav-dots" id="navDots" aria-label="Slide navigation"></nav>
+<div class="counter"><b id="cur">01</b> / <span id="total">08</span></div>
+<div class="kbd-hint">Use <kbd>↑</kbd> <kbd>↓</kbd> or scroll</div>
+
+<main>
+
+    <!-- 1 · TITLE -->
+    <section class="slide" id="s1">
+        <div class="bg-brand" aria-hidden="true"></div>
+        <div class="slide-content title-wrap">
+            <span class="eyebrow" data-reveal="1">AI Sales Outreach</span>
+            <h1 class="mega" data-reveal="2">Lead<span class="hot">Flow</span></h1>
+            <p class="title-sub" data-reveal="3">Find the right companies and people, draft the outreach,<br>and track every reply — with you in control at each step.</p>
+            <p class="title-tag" data-reveal="4">Find companies · find people · draft the emails · approve &amp; send · track replies.</p>
+        </div>
+    </section>
+
+    <!-- 2 · THE PROBLEM -->
+    <section class="slide" id="s2">
+        <div class="slide-content">
+            <span class="eyebrow" data-reveal="1">Why it exists</span>
+            <h2 style="font-size:var(--title-size); margin:.3em 0 .55em; max-width:18ch;" data-reveal="2">Prospecting eats your <span class="hot">whole week</span>.</h2>
+            <ul class="feature-list">
+                <li data-reveal="3">Finding the <b>right companies</b> is slow and manual.</li>
+                <li data-reveal="4">Finding the <b>right people</b> inside them is worse.</li>
+                <li data-reveal="5">Writing a <b>personal email</b> to each one doesn't scale.</li>
+                <li data-reveal="6">Replies get lost, and follow-ups quietly slip.</li>
+            </ul>
+            <p class="kicker hot" style="margin-top:var(--content-gap);" data-reveal="6">LeadFlow does the heavy lifting — you stay in control.</p>
+        </div>
+    </section>
+
+    <!-- 3 · THE PIPELINE OVERVIEW -->
+    <section class="slide" id="s3">
+        <div class="slide-content" style="gap:var(--content-gap); align-items:flex-start;">
+            <span class="eyebrow" data-reveal="1">The big picture</span>
+            <h2 style="font-size:var(--title-size);" data-reveal="2">One pipeline, <span class="hot">four stages</span></h2>
+            <div class="grid-cards cols-4">
+                <div class="card" data-reveal="3"><span class="top-line"></span><div class="idx">01</div><h3>Find Organizations</h3><p>Search &amp; enrich target companies, push them to your CRM.</p></div>
+                <div class="card" data-reveal="4"><span class="top-line"></span><div class="idx">02</div><h3>Find People</h3><p>Surface the decision-makers inside each company.</p></div>
+                <div class="card" data-reveal="5"><span class="top-line"></span><div class="idx">03</div><h3>AI Campaign</h3><p>Draft personalized emails, review, and send in sequence.</p></div>
+                <div class="card" data-reveal="6"><span class="top-line"></span><div class="idx">04</div><h3>Monitor Replies</h3><p>Match every response back to the lead, automatically.</p></div>
+            </div>
+            <p class="lead" data-reveal="6">You drive each stage — and your CRM stays the single source of truth.</p>
+        </div>
+    </section>
+
+    <!-- 4 · BUILD YOUR TARGET LIST (stages 1+2) -->
+    <section class="slide" id="s4">
+        <div class="slide-content">
+            <span class="eyebrow" data-reveal="1">Stages 1 &amp; 2</span>
+            <h2 style="font-size:var(--title-size); margin:.3em 0 .6em;" data-reveal="2">Build your <span class="hot">target list</span></h2>
+            <div class="grid-cards cols-2">
+                <div class="card" data-reveal="3"><span class="top-line"></span><div class="idx">01 — Organizations</div>
+                    <p style="margin-top:.6em; font-size:var(--body-size); color:var(--ink-2);">Search by domain, company name, or filters like industry, size and location — or bulk-upload an Excel list. Each company is auto-enriched and saved to your CRM.</p></div>
+                <div class="card" data-reveal="4"><span class="top-line"></span><div class="idx">02 — People</div>
+                    <p style="margin-top:.6em; font-size:var(--body-size); color:var(--ink-2);">For any company, surface the relevant decision-makers — enriched with role, seniority and LinkedIn — and turn them into leads in one click.</p></div>
+            </div>
+            <p class="kicker" style="margin-top:var(--content-gap); color:var(--ink-2); font-weight:500;" data-reveal="5">You <b style="color:var(--ink);">vet every company and contact</b> — open their website and LinkedIn — then keep only what's worth it. Nothing is saved blindly.</p>
+        </div>
+    </section>
+
+    <!-- 5 · AI WRITES THE OUTREACH (stage 3) -->
+    <section class="slide" id="s5">
+        <div class="slide-content">
+            <span class="eyebrow" data-reveal="1">The core</span>
+            <h2 style="font-size:var(--title-size); margin:.3em 0 .6em;" data-reveal="2">AI writes <span class="hot">every email</span></h2>
+            <ul class="feature-list">
+                <li data-reveal="3">A <b>personalized draft per lead</b>, built from their company and role.</li>
+                <li data-reveal="4">A real <b>sequence</b>: first mail, follow-ups, final touch.</li>
+                <li data-reveal="5"><b>Nothing sends until you approve it</b> — every single mail, by hand.</li>
+                <li data-reveal="6">Once you approve, it <b>sends the email and advances the CRM stage</b>.</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- 6 · TRACK EVERY REPLY (stage 4) -->
+    <section class="slide" id="s6">
+        <div class="slide-content">
+            <span class="eyebrow" data-reveal="1">Stage 4</span>
+            <h2 style="font-size:var(--title-size); margin:.3em 0 .6em;" data-reveal="2">Every reply, <span class="hot">tracked</span></h2>
+            <ul class="feature-list">
+                <li data-reveal="3">Incoming replies are <b>watched automatically</b> — no inbox babysitting.</li>
+                <li data-reveal="4">Each reply is matched back to <b>the right lead and person</b>.</li>
+                <li data-reveal="5">The CRM label flips to <b>“answered”</b> with zero manual logging.</li>
+                <li data-reveal="6">Every response shows up in <b>one place</b> in the app.</li>
+            </ul>
+            <p class="kicker hot" style="margin-top:var(--content-gap);" data-reveal="6">The loop closes itself.</p>
+        </div>
+    </section>
+
+    <!-- 7 · HOW IT WORKS (light) -->
+    <section class="slide" id="s7">
+        <div class="slide-content" style="gap:var(--content-gap); align-items:flex-start;">
+            <span class="eyebrow" data-reveal="1">Under the hood — at a glance</span>
+            <h2 style="font-size:var(--title-size);" data-reveal="2">How it <span class="hot">works</span></h2>
+            <div class="flow">
+                <div class="node" data-reveal="3"><span class="node-top"></span><div class="node-k">You operate</div><h4>The App</h4><p>You point and click. No spreadsheets, no scripts.</p></div>
+                <div class="node" data-reveal="4"><span class="node-top"></span><div class="node-k">Behind the scenes</div><h4>Automation Engine</h4><p>Orchestrates every step between the tools.</p></div>
+                <div class="node" data-reveal="5"><span class="node-top"></span><div class="node-k">The grunt work</div><h4>AI &amp; Data</h4><p>Finds the contacts and drafts the emails.</p></div>
+            </div>
+            <div class="chips" data-reveal="6" style="margin-top:.4rem;">
+                <span class="chip">Company &amp; people data: <b>Apollo</b></span>
+                <span class="chip">CRM: <b>Pipedrive</b></span>
+                <span class="chip">Writing: <b>AI model</b></span>
+                <span class="chip">Send &amp; receive: <b>your mailbox</b></span>
+            </div>
+        </div>
+    </section>
+
+    <!-- 8 · RECAP -->
+    <section class="slide" id="s8">
+        <div class="slide-content" style="gap:var(--content-gap);">
+            <span class="eyebrow" data-reveal="1">In one screen</span>
+            <h2 style="font-size:var(--title-size); max-width:20ch;" data-reveal="2">Companies, people, campaigns &amp; replies — <span class="hot">driven from one place</span>.</h2>
+            <div class="chips" data-reveal="3">
+                <span class="chip win">Targeted company lists</span>
+                <span class="chip win">The right people, vetted</span>
+                <span class="chip win">Personalized AI drafts</span>
+                <span class="chip win">You approve every send</span>
+                <span class="chip win">Replies tracked automatically</span>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<script>
+/* =========================================================
+   Presentation controller: keyboard + dots + progress.
+   Wheel & touch navigation come from native CSS scroll-snap.
+   ========================================================= */
+(function () {
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const navDots = document.getElementById('navDots');
+    const progress = document.getElementById('progress');
+    const curEl = document.getElementById('cur');
+    const totalEl = document.getElementById('total');
+    let current = 0;
+
+    const pad = n => String(n + 1).padStart(2, '0');
+    totalEl.textContent = pad(slides.length - 1);
+
+    slides.forEach((s, i) => {
+        const b = document.createElement('button');
+        b.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+        b.addEventListener('click', () => goTo(i));
+        navDots.appendChild(b);
+    });
+    const dots = Array.from(navDots.children);
+
+    function setActive(i) {
+        current = i;
+        slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+        dots.forEach((d, idx) => d.classList.toggle('active', idx === i));
+        curEl.textContent = pad(i);
+        progress.style.width = (i / (slides.length - 1) * 100) + '%';
+    }
+
+    function goTo(i) {
+        i = Math.max(0, Math.min(slides.length - 1, i));
+        slides[i].scrollIntoView({ behavior: 'smooth' });
+        setActive(i);
+    }
+
+    // Keep "current" in sync with native wheel/touch scroll-snap.
+    const io = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+            if (e.isIntersecting && e.intersectionRatio >= 0.55) {
+                const idx = slides.indexOf(e.target);
+                if (idx !== -1) setActive(idx);
+            }
+        });
+    }, { threshold: [0.55] });
+    slides.forEach(s => io.observe(s));
+
+    window.addEventListener('keydown', (ev) => {
+        switch (ev.key) {
+            case 'ArrowDown': case 'ArrowRight': case 'PageDown': case ' ':
+                ev.preventDefault(); goTo(current + 1); break;
+            case 'ArrowUp': case 'ArrowLeft': case 'PageUp':
+                ev.preventDefault(); goTo(current - 1); break;
+            case 'Home': ev.preventDefault(); goTo(0); break;
+            case 'End': ev.preventDefault(); goTo(slides.length - 1); break;
+        }
+    });
+
+    setActive(0);
+})();
+</script>
+</body>
+</html>
